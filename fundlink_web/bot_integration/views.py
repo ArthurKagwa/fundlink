@@ -85,11 +85,31 @@ def verify_signature(payload, signature):
 @permission_classes([AllowAny])
 @csrf_exempt
 def register_user(request):
-    """Idempotent bot user registration (internal)."""
+    """Idempotent bot user registration (internal).
+    Accept Authorization: Bearer <key> OR X-INTERNAL-KEY: <key>.
+    This avoids conflicts with DRF JWT (which also inspects Authorization) when
+    clients mistakenly send the internal key where a JWT is expected.
+    """
     internal_key = getattr(settings, 'INTERNAL_API_KEY', '')
     auth_header = request.headers.get('Authorization', '')
+    alt_header = request.headers.get('X-INTERNAL-KEY', '')
+
+    print("DEBUG - register_user called")
+    print(f"DEBUG - INTERNAL_API_KEY configured: {bool(internal_key)}")
+    print(f"DEBUG - Bearer header present: {auth_header.startswith('Bearer ')}  Alt header present: {bool(alt_header)}")
+
+    supplied = None
+    if auth_header.startswith('Bearer '):
+        supplied = auth_header.split(' ', 1)[1].strip()
+    elif alt_header:
+        supplied = alt_header.strip()
+
     if internal_key:
-        if not (auth_header.startswith('Bearer ') and hmac.compare_digest(auth_header.split(' ',1)[1], internal_key)):
+        if not (supplied and hmac.compare_digest(supplied, internal_key)):
+            if supplied:
+                print(f"DEBUG - Token mismatch prefix supplied={supplied[:6]} expected={internal_key[:6]}")
+            else:
+                print("DEBUG - No acceptable internal auth header supplied")
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
 
     data = request.data
@@ -105,6 +125,21 @@ def register_user(request):
             setattr(user, field, val)
     user.save()
     return Response({'ok': True, 'created': created})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def user_exists(request):
+    """Lightweight existence check for a bot user.
+    Query param: telegram_id=<id>
+    Returns: {exists: bool}
+    Always 200 for idempotent caller logic.
+    """
+    telegram_id = request.query_params.get('telegram_id') or request.GET.get('telegram_id')
+    if not telegram_id:
+        return Response({'error': 'telegram_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+    exists = BotUser.objects.filter(telegram_id=telegram_id).exists()
+    return Response({'exists': exists})
 
 
 @api_view(['POST'])

@@ -56,6 +56,18 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "user_exists",
+            "description": "Check if a Telegram user is already registered (lightweight).",
+            "parameters": {
+                "type": "object",
+                "properties": {"telegram_id": {"type": "string"}},
+                "required": ["telegram_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "notify_donor",
             "description": "Send a donor a message via backend (secured).",
             "parameters": {

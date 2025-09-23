@@ -6,6 +6,7 @@ from django.contrib.auth import login
 from django.contrib import messages
 from campaigns.models import Campaign
 from ngos.models import NGO
+from ngos.serializers import NGOApplicationSerializer
 from donations.models import Donation
 from django.db.models import Count, Sum
 
@@ -65,7 +66,28 @@ class NGOApplyView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Register Your NGO'
+        # Pass along any previous form data/errors for graceful re-render after POST
+        if 'form_data' in kwargs:
+            context['form_data'] = kwargs['form_data']
+        if 'errors' in kwargs:
+            context['errors'] = kwargs['errors']
         return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle non-JS (progressive enhancement) form submissions.
+
+        The primary submission path in the template uses JS to hit the REST endpoint
+        at /api/ngos/apply/. If JS fails or is disabled, this provides a graceful
+        server-side fallback using the same serializer logic.
+        """
+        serializer = NGOApplicationSerializer(data=request.POST)
+        if serializer.is_valid():
+            serializer.save()
+            messages.success(request, 'Application submitted successfully. Awaiting admin approval.')
+            return redirect('main:ngo_apply')
+        # Re-render with errors and previously entered data
+        context = self.get_context_data(form_data=request.POST, errors=serializer.errors)
+        return self.render_to_response(context, status=400)
 
 
 class AboutView(TemplateView):

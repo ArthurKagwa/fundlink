@@ -2,7 +2,18 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 # Import the message handler from the parent package
-from ...telbot_llm.handlers import handle_message
+try:
+    from telbot_llm.telbot_llm.handlers import handle_message
+except ImportError:
+    # Try alternate import paths
+    try:
+        from ...telbot_llm.handlers import handle_message
+    except ImportError:
+        # If all else fails, try directly importing from the module
+        import sys
+        import os
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+        from telbot_llm.handlers import handle_message
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the /start command"""

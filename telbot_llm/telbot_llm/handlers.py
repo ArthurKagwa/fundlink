@@ -22,14 +22,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     tg_id = str(update.message.from_user.id)
 
-    # Silent registration (best-effort)
-    try:
-        await call_django_api(
-            "register_user",
-            {"telegram_id": tg_id, "username": update.message.from_user.username or ""},
-        )
-    except Exception:  # non-fatal
-        pass
+    # Silent one-time registration (best-effort).
+    # 1. Check local cache; if unknown, ask backend with lightweight GET; only POST if absent.
+    global _REGISTERED_USERS_CACHE, _REGISTERED_USERS_ORDER
+    if tg_id not in _REGISTERED_USERS_CACHE:
+        try:
+            exists_resp = await call_django_api("user_exists", {"telegram_id": tg_id})
+            exists = bool(exists_resp.get("exists")) if isinstance(exists_resp, dict) else False
+        except Exception:
+            # If existence check fails (network, auth), optimistically try register (idempotent server-side)
+            exists = False
+        if not exists:
+            try:
+                await call_django_api(
+                    "register_user",
+                    {"telegram_id": tg_id, "username": update.message.from_user.username or ""},
+                )
+            except Exception:
+                # Non-fatal; continue handling message
+                pass
+        _REGISTERED_USERS_CACHE.add(tg_id)
+        _REGISTERED_USERS_ORDER.append(tg_id)
+        if len(_REGISTERED_USERS_ORDER) > 10000:
+            old = _REGISTERED_USERS_ORDER.pop(0)
+            _REGISTERED_USERS_CACHE.discard(old)
 
     try:
         first = await chat_with_tools(text, tg_id)
@@ -55,3 +71,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(final_text, disable_web_page_preview=True)
 
 __all__ = ["handle_message"]
+
+# Module-level simple cache (declared after function to satisfy linters ordering preferences)
+_REGISTERED_USERS_CACHE = set()
+_REGISTERED_USERS_ORDER = []

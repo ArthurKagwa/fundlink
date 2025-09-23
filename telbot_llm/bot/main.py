@@ -1,7 +1,16 @@
 import os
 import logging
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
-from .handlers.chat import start, chat
+# Use absolute imports when running as a script
+try:
+    from bot.handlers.chat import start, chat
+except ImportError:
+    # Fallback to relative imports when imported as a module
+    try:
+        from .handlers.chat import start, chat
+    except ImportError:
+        # Last resort, try direct import
+        from handlers.chat import start, chat
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,7 +21,8 @@ def build():
     """Build and configure the application with handlers"""
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    # Explicitly disable job queue to avoid weakref/initialization issues
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).job_queue(None).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     return app

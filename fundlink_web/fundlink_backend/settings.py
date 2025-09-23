@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'campaigns',
     'donations',
     'bot_integration',
+    'bot_manager',  # Added for the run_llm_bot management command
 ]
 
 MIDDLEWARE = [

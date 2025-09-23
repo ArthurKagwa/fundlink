@@ -30,10 +30,10 @@ SYSTEM = (
 )
 
 
-def _extract_tool_call(output_item) -> Optional[Dict[str, Any]]:
-    if not hasattr(output_item, "tool_calls") or not output_item.tool_calls:
+def _extract_tool_call(message) -> Optional[Dict[str, Any]]:
+    if not hasattr(message, "tool_calls") or not message.tool_calls:
         return None
-    call = output_item.tool_calls[0]
+    call = message.tool_calls[0]
     raw_args = getattr(call.function, "arguments", {})
     if isinstance(raw_args, str):
         try:
@@ -55,18 +55,18 @@ async def chat_with_tools(user_text: str, telegram_id: str, history: Optional[Li
     last_err: Exception | None = None
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            resp = c.responses.create(
+            resp = c.chat.completions.create(
                 model=model,
-                input=messages,
+                messages=messages,
                 tools=TOOLS,
                 tool_choice="auto",
                 temperature=TEMP,
             )
-            out = resp.output[0]
+            out = resp.choices[0].message
             tool_call = _extract_tool_call(out)
             if tool_call:
                 return {"tool_call": tool_call, "messages": messages, "model": model}
-            text = out.content[0].text if out.content else ""
+            text = out.content if out.content else ""
             return {"text": text.strip(), "messages": messages, "model": model}
         except Exception as e:  # pragma: no cover - network/model errors
             last_err = e
@@ -79,13 +79,13 @@ async def continue_with_tool_result(state: Dict[str, Any], tool_result: Any):
     c = _client()
     model = state.get("model", PRIMARY_MODEL)
     try:
-        resp = c.responses.create(
+        resp = c.chat.completions.create(
             model=model,
-            input=messages,
+            messages=messages,
             temperature=TEMP,
         )
-        out = resp.output[0]
-        return out.content[0].text.strip()
+        out = resp.choices[0].message
+        return out.content.strip()
     except Exception:  # pragma: no cover
         return f"Result: {_truncate(tool_result, 600)}"  # graceful degrade
 

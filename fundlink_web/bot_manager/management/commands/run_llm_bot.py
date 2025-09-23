@@ -11,6 +11,18 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 telbot_llm_path = os.path.join(project_root, 'telbot_llm')
 if telbot_llm_path not in sys.path:
     sys.path.append(telbot_llm_path)
+    
+# Print paths for debugging
+print(f"Project root: {project_root}")
+print(f"telbot_llm path: {telbot_llm_path}")
+print(f"Current working directory: {os.getcwd()}")
+print(f"Python path: {sys.path}")
+
+# Check if the directory exists
+if not os.path.isdir(telbot_llm_path):
+    print(f"ERROR: {telbot_llm_path} directory does not exist!")
+elif not os.path.isdir(os.path.join(telbot_llm_path, 'bot')):
+    print(f"ERROR: {telbot_llm_path}/bot directory does not exist!")
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +60,25 @@ class Command(BaseCommand):
 
         # Import bot after environment validation
         try:
-            from telbot_llm.bot.main import build, run_polling, run_webhook
+            # Try different import methods
+            try:
+                # Try direct import first
+                from telbot_llm.bot.main import build, run_polling, run_webhook
+            except ImportError:
+                # If that doesn't work, try explicit import
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "main", 
+                    os.path.join(telbot_llm_path, "bot", "main.py")
+                )
+                if spec is None:
+                    raise ImportError(f"Could not find main.py in {telbot_llm_path}/bot/")
+                    
+                main_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(main_module)
+                build = main_module.build
+                run_polling = main_module.run_polling
+                run_webhook = main_module.run_webhook
         except ImportError as e:
             self.stderr.write(self.style.ERROR(f"Failed to import bot module: {e}"))
             self.stderr.write(self.style.ERROR("Ensure telbot_llm package is installed and accessible"))
