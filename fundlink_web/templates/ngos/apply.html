@@ -1,0 +1,424 @@
+{% extends 'base.html' %}
+
+{% block title %}Register NGO - FundLink{% endblock %}
+
+{% block content %}
+<h1>Register Your NGO</h1>
+<p class="text-muted">Join FundLink to receive transparent cryptocurrency donations</p>
+
+<form method="post" class="card" style="max-width: 500px;">
+    {% csrf_token %}
+    
+    <h3>Basic Information</h3>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Organization Name *</label>
+        <input type="text" name="name" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Contact Email *</label>
+        <input type="email" name="email" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Description *</label>
+        <textarea name="description" rows="4" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;" 
+                                      placeholder="Describe your organization's mission, activities, and impact..." required></textarea>
+                            <div class="form-text">Minimum 100 characters. This will be displayed to potential donors.</div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="website" class="form-label">Official Website</label>
+                                <input type="url" class="form-control" id="website" name="website" 
+                                       placeholder="https://your-ngo.org">
+                                <div class="invalid-feedback"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="docs_url" class="form-label">Registration Documents</label>
+                                <input type="url" class="form-control" id="docs_url" name="docs_url" 
+                                       placeholder="https://drive.google.com/... (public link)">
+                                <div class="form-text">Link to official registration/tax-exempt documents</div>
+                                <div class="invalid-feedback"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Wallet Configuration -->
+                        <div class="section-header mb-4 mt-5">
+                placeholder="Describe your organization's mission and activities..."></textarea>
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Website URL</label>
+        <input type="url" name="website" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Registration Number</label>
+        <input type="text" name="registration_number" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+    </div>
+    
+    <h3>Wallet Information</h3>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>Avalanche Wallet Address *</label>
+        <input type="text" name="wallet_address" placeholder="0x..." required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+        <p class="text-muted" style="font-size: 0.9rem; margin-top: 0.5rem;">This address will receive donations on Avalanche Fuji testnet</p>
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label>
+            <input type="checkbox" name="terms_agreement" required style="margin-right: 0.5rem;">
+            I confirm all information is accurate and our organization is legally registered *
+        </label>
+    </div>
+    
+    <div style="margin-bottom: 2rem;">
+        <label>
+            <input type="checkbox" name="transparency_agreement" required style="margin-right: 0.5rem;">
+            I understand donations will be publicly visible on blockchain *
+        </label>
+    </div>
+    
+    <button type="submit" class="btn" style="width: 100%;">Submit Application</button>
+    
+    <p class="text-muted" style="text-align: center; margin-top: 1rem; font-size: 0.9rem;">
+        Applications reviewed within 3-5 business days
+    </p>
+</form>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Getting an Avalanche Wallet</h6>
+                            <p class="text-muted small">
+                                If you don't have an Avalanche wallet yet, you can create one using:
+                            </p>
+                            <ul class="list-unstyled">
+                                <li><a href="https://metamask.io/" target="_blank" class="text-decoration-none">
+                                    <i class="fas fa-external-link-alt me-1"></i>MetaMask
+                                </a></li>
+                                <li><a href="https://wallet.avax.network/" target="_blank" class="text-decoration-none">
+                                    <i class="fas fa-external-link-alt me-1"></i>Avalanche Wallet
+                                </a></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Contact Support</h6>
+                            <p class="text-muted small">
+                                Have questions about the application process?
+                            </p>
+                            <p>
+                                <a href="mailto:support@fundlink.org" class="text-decoration-none">
+                                    <i class="fas fa-envelope me-1"></i>support@fundlink.org
+                                </a>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+class NGOApplicationForm {
+    constructor() {
+        this.form = document.getElementById('ngo-application-form');
+        this.submitBtn = document.getElementById('submit-btn');
+        this.init();
+    }
+
+    init() {
+        this.setupEventListeners();
+        this.setupValidation();
+    }
+
+    setupEventListeners() {
+        this.form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSubmit();
+        });
+
+        // Real-time wallet address validation
+        document.getElementById('wallet_address').addEventListener('input', (e) => {
+            this.validateWalletAddress(e.target);
+        });
+
+        // Character count for description
+        const descriptionField = document.getElementById('description');
+        const charCounter = document.createElement('div');
+        charCounter.className = 'form-text text-end';
+        charCounter.id = 'char-counter';
+        descriptionField.parentNode.appendChild(charCounter);
+
+        descriptionField.addEventListener('input', (e) => {
+            const length = e.target.value.length;
+            charCounter.textContent = `${length}/500 characters`;
+            charCounter.className = `form-text text-end ${length < 100 ? 'text-warning' : 'text-success'}`;
+        });
+    }
+
+    setupValidation() {
+        // Add Bootstrap validation classes
+        const inputs = this.form.querySelectorAll('input, textarea');
+        inputs.forEach(input => {
+            input.addEventListener('blur', () => {
+                this.validateField(input);
+            });
+        });
+    }
+
+    validateField(field) {
+        const value = field.value.trim();
+        let isValid = true;
+        let errorMessage = '';
+
+        // Remove existing validation classes
+        field.classList.remove('is-valid', 'is-invalid');
+
+        switch (field.id) {
+            case 'name':
+                if (!value) {
+                    isValid = false;
+                    errorMessage = 'Organization name is required';
+                } else if (value.length < 3) {
+                    isValid = false;
+                    errorMessage = 'Organization name must be at least 3 characters';
+                }
+                break;
+
+            case 'email':
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!value) {
+                    isValid = false;
+                    errorMessage = 'Email is required';
+                } else if (!emailRegex.test(value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid email address';
+                }
+                break;
+
+            case 'description':
+                if (!value) {
+                    isValid = false;
+                    errorMessage = 'Description is required';
+                } else if (value.length < 100) {
+                    isValid = false;
+                    errorMessage = 'Description must be at least 100 characters';
+                } else if (value.length > 500) {
+                    isValid = false;
+                    errorMessage = 'Description must not exceed 500 characters';
+                }
+                break;
+
+            case 'website':
+                if (value && !this.isValidUrl(value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid website URL';
+                }
+                break;
+
+            case 'docs_url':
+                if (value && !this.isValidUrl(value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid document URL';
+                }
+                break;
+
+            case 'wallet_address':
+                if (!value) {
+                    isValid = false;
+                    errorMessage = 'Wallet address is required';
+                } else if (!this.isValidEthereumAddress(value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid Ethereum/Avalanche address';
+                }
+                break;
+        }
+
+        // Apply validation styles
+        if (isValid) {
+            field.classList.add('is-valid');
+        } else {
+            field.classList.add('is-invalid');
+        }
+
+        // Show error message
+        const feedback = field.parentNode.querySelector('.invalid-feedback');
+        if (feedback) {
+            feedback.textContent = errorMessage;
+        }
+
+        return isValid;
+    }
+
+    validateWalletAddress(field) {
+        const address = field.value.trim();
+        
+        if (address && this.isValidEthereumAddress(address)) {
+            // Show checksum warning if needed
+            const checksummed = this.toChecksumAddress(address);
+            if (address !== checksummed) {
+                const warning = field.parentNode.querySelector('.checksum-warning') || document.createElement('div');
+                warning.className = 'form-text text-warning checksum-warning';
+                warning.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Consider using checksum format: <code>${checksummed}</code>
+                `;
+                if (!field.parentNode.querySelector('.checksum-warning')) {
+                    field.parentNode.appendChild(warning);
+                }
+            } else {
+                const warning = field.parentNode.querySelector('.checksum-warning');
+                if (warning) warning.remove();
+            }
+        }
+
+        this.validateField(field);
+    }
+
+    isValidUrl(string) {
+        try {
+            new URL(string);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    isValidEthereumAddress(address) {
+        return /^0x[a-fA-F0-9]{40}$/.test(address);
+    }
+
+    toChecksumAddress(address) {
+        // Simplified checksum (in real app, use web3.js or ethers.js)
+        return address.toLowerCase();
+    }
+
+    async handleSubmit() {
+        // Validate all fields
+        const fields = this.form.querySelectorAll('input[required], textarea[required]');
+        let isFormValid = true;
+
+        fields.forEach(field => {
+            if (!this.validateField(field)) {
+                isFormValid = false;
+            }
+        });
+
+        // Check agreements
+        const agreements = this.form.querySelectorAll('input[type="checkbox"][required]');
+        agreements.forEach(checkbox => {
+            if (!checkbox.checked) {
+                checkbox.classList.add('is-invalid');
+                isFormValid = false;
+            } else {
+                checkbox.classList.remove('is-invalid');
+            }
+        });
+
+        if (!isFormValid) {
+            this.showAlert('Please fix the errors below before submitting.', 'danger');
+            return;
+        }
+
+        // Show loading state
+        this.submitBtn.disabled = true;
+        this.submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
+
+        try {
+            const formData = new FormData(this.form);
+            const response = await fetch('/api/ngos/apply/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': formData.get('csrfmiddlewaretoken'),
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                this.showSuccessMessage();
+            } else {
+                const errorData = await response.json();
+                this.handleSubmitError(errorData);
+            }
+        } catch (error) {
+            console.error('Submit error:', error);
+            this.showAlert('Network error. Please try again.', 'danger');
+        } finally {
+            this.submitBtn.disabled = false;
+            this.submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Submit Application';
+        }
+    }
+
+    handleSubmitError(errorData) {
+        // Show field-specific errors
+        if (errorData.errors) {
+            Object.keys(errorData.errors).forEach(fieldName => {
+                const field = this.form.querySelector(`[name="${fieldName}"]`);
+                if (field) {
+                    field.classList.add('is-invalid');
+                    const feedback = field.parentNode.querySelector('.invalid-feedback');
+                    if (feedback) {
+                        feedback.textContent = errorData.errors[fieldName][0];
+                    }
+                }
+            });
+        } else {
+            this.showAlert('There was an error submitting your application. Please try again.', 'danger');
+        }
+    }
+
+    showSuccessMessage() {
+        // Replace form with success message
+        this.form.parentNode.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
+                <h3 class="text-success mb-3">Application Submitted Successfully!</h3>
+                <p class="lead text-muted mb-4">
+                    Thank you for applying to join FundLink. We've received your application 
+                    and will review it within 3-5 business days.
+                </p>
+                <div class="alert alert-info">
+                    <i class="fas fa-envelope me-2"></i>
+                    You'll receive an email notification at the address you provided 
+                    once your application has been processed.
+                </div>
+                <div class="mt-4">
+                    <a href="{% url 'main:home' %}" class="btn btn-primary me-2">
+                        <i class="fas fa-home me-1"></i>Back to Home
+                    </a>
+                    <a href="{% url 'main:campaigns_list' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-heart me-1"></i>View Campaigns
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    showAlert(message, type = 'info') {
+        const existingAlert = document.querySelector('.form-alert');
+        if (existingAlert) existingAlert.remove();
+
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type} alert-dismissible fade show form-alert`;
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        this.form.insertBefore(alert, this.form.firstChild);
+        alert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+// Initialize the form
+document.addEventListener('DOMContentLoaded', () => {
+    new NGOApplicationForm();
+});
+</script>
+{% endblock %}

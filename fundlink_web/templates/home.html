@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block title %}FundLink - Transparent Donations{% endblock %}
+
+{% block content %}
+<div class="text-center" style="padding: 3rem 0;">
+    <h1>Transparent Humanitarian Donations</h1>
+    <p class="text-muted">Support verified NGOs with cryptocurrency on Avalanche Fuji testnet</p>
+    
+    <div style="margin: 2rem 0;">
+        <a href="{% url 'main:campaigns_list' %}" class="btn">View Campaigns</a>
+        <a href="{% url 'main:ngo_apply' %}" class="btn btn-outline">Register NGO</a>
+    </div>
+</div>
+
+<div class="grid">
+    <div class="card text-center">
+        <h3>Transparent</h3>
+        <p class="text-muted">All donations tracked on blockchain</p>
+    </div>
+    <div class="card text-center">
+        <h3>Verified</h3>
+        <p class="text-muted">NGOs are manually verified</p>
+    </div>
+    <div class="card text-center">
+        <h3>Direct</h3>
+        <p class="text-muted">Donations go directly to NGOs</p>
+    </div>
+</div>
+
+<div id="recent-campaigns" style="margin-top: 3rem;">
+    <h2>Recent Campaigns</h2>
+    <div id="campaigns-list">
+        <p class="text-muted">Loading campaigns...</p>
+    </div>
+    <div class="text-center" style="margin-top: 2rem;">
+        <a href="{% url 'main:campaigns_list' %}" class="btn">View All Campaigns</a>
+    </div>
+</div>
+
+<script>
+// Load recent campaigns
+fetch('/api/campaigns/?limit=3')
+    .then(response => response.json())
+    .then(data => {
+        const container = document.getElementById('campaigns-list');
+        if (data.results && data.results.length > 0) {
+            container.innerHTML = data.results.map(campaign => `
+                <div class="card">
+                    <h3>${campaign.title}</h3>
+                    <p class="text-muted">${campaign.description.substring(0, 100)}...</p>
+                    <p><strong>Target:</strong> ${campaign.target_amount} ${campaign.token_options[0]}</p>
+                    <a href="/campaigns/${campaign.id}/" class="btn">Learn More</a>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p class="text-muted">No active campaigns at the moment.</p>';
+        }
+    })
+    .catch(error => {
+        document.getElementById('campaigns-list').innerHTML = '<p class="text-muted">Unable to load campaigns.</p>';
+    });
+</script>
+<section class="py-5">
+    <div class="container">
+        <div class="row text-center mb-5">
+            <div class="col-12">
+                <h2 class="fw-bold mb-3">How It Works</h2>
+                <p class="text-muted">Simple steps to make a transparent donation</p>
+            </div>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number mb-3">1</div>
+                    <h5>Choose Campaign</h5>
+                    <p class="text-muted">Browse verified campaigns from trusted NGOs</p>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number mb-3">2</div>
+                    <h5>Select Amount</h5>
+                    <p class="text-muted">Choose donation amount in AVAX or USDT</p>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number mb-3">3</div>
+                    <h5>Send via MetaMask</h5>
+                    <p class="text-muted">Use our Telegram bot or website to donate</p>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number mb-3">4</div>
+                    <h5>Track Impact</h5>
+                    <p class="text-muted">Get receipts and follow campaign progress</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-5 bg-primary text-white">
+    <div class="container">
+        <div class="row text-center">
+            <div class="col-12">
+                <h2 class="fw-bold mb-3">Ready to Make an Impact?</h2>
+                <p class="lead mb-4">Join thousands of donors using blockchain technology for transparent giving</p>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="#" class="btn btn-light btn-lg">
+                        <i class="fab fa-telegram me-2"></i>Start on Telegram
+                    </a>
+                    <a href="{% url 'main:campaigns_list' %}" class="btn btn-outline-light btn-lg">
+                        Browse Campaigns
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Load featured campaigns
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/campaigns/?limit=3')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('featured-campaigns');
+            if (data.results && data.results.length > 0) {
+                container.innerHTML = data.results.map(campaign => `
+                    <div class="col-md-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title">${campaign.title}</h5>
+                                <p class="card-text text-muted">${campaign.description.substring(0, 100)}...</p>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-success">
+                                        <i class="fas fa-check-circle me-1"></i>${campaign.ngo_name}
+                                    </small>
+                                    <span class="badge bg-primary">${campaign.token_options.join(', ')}</span>
+                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <a href="/campaigns/${campaign.id}/" class="btn btn-primary btn-sm">
+                                    Donate Now <i class="fas fa-external-link-alt ms-1"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = `
+                    <div class="col-12 text-center">
+                        <p class="text-muted">No active campaigns at the moment. Check back soon!</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading campaigns:', error);
+            document.getElementById('featured-campaigns').innerHTML = `
+                <div class="col-12 text-center">
+                    <p class="text-muted">Unable to load campaigns. Please try again later.</p>
+                </div>
+            `;
+        });
+});
+</script>
+{% endblock %}

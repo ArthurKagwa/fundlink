@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}Login - FundLink{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 300px; margin: 2rem auto;">
+    <h2>Login</h2>
+    
+    {% if form.errors %}
+        <div class="alert alert-danger">Please correct the errors below.</div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        
+        <div style="margin-bottom: 1rem;">
+            <label>Username</label>
+            {{ form.username }}
+            {% if form.username.errors %}
+                <p style="color: red; font-size: 0.9rem;">{{ form.username.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label>Password</label>
+            {{ form.password }}
+            {% if form.password.errors %}
+                <p style="color: red; font-size: 0.9rem;">{{ form.password.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%;">Sign In</button>
+    </form>
+    
+    <div style="margin-top: 1rem; text-align: center;">
+        <p class="text-muted" style="font-size: 0.9rem;">
+            Contact admin for NGO accounts
+        </p>
+    </div>
+</div>
+{% endblock %}

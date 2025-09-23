@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+
+{% block title %}Campaigns - FundLink{% endblock %}
+
+{% block content %}
+<h1>Active Campaigns</h1>
+<p class="text-muted">Support verified humanitarian causes</p>
+
+<div style="margin: 2rem 0;">
+    <input type="text" id="search" placeholder="Search campaigns..." style="padding: 0.5rem; width: 100%; max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
+</div>
+
+<div id="campaigns-grid">
+    <p class="text-muted">Loading campaigns...</p>
+</div>
+
+<script>
+let allCampaigns = [];
+
+function renderCampaigns(campaigns) {
+    const grid = document.getElementById('campaigns-grid');
+    if (campaigns.length === 0) {
+        grid.innerHTML = '<p class="text-muted">No campaigns found.</p>';
+        return;
+    }
+    
+    grid.innerHTML = campaigns.map(campaign => `
+        <div class="card">
+            <h3>${campaign.title}</h3>
+            <p class="text-muted"><strong>NGO:</strong> ${campaign.ngo_name || 'Unknown'}</p>
+            <p>${campaign.description.substring(0, 150)}...</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+                <div>
+                    <strong>Target:</strong> ${campaign.target_amount} ${campaign.token_options[0] || 'AVAX'}
+                </div>
+                <a href="/campaigns/${campaign.id}/" class="btn">Donate</a>
+            </div>
+        </div>
+    `).join('');
+}
+
+function filterCampaigns() {
+    const search = document.getElementById('search').value.toLowerCase();
+    const filtered = allCampaigns.filter(campaign => 
+        campaign.title.toLowerCase().includes(search) ||
+        campaign.description.toLowerCase().includes(search) ||
+        (campaign.ngo_name && campaign.ngo_name.toLowerCase().includes(search))
+    );
+    renderCampaigns(filtered);
+}
+
+// Load campaigns
+fetch('/api/campaigns/')
+    .then(response => response.json())
+    .then(data => {
+        allCampaigns = data.results || data;
+        renderCampaigns(allCampaigns);
+        
+        // Setup search
+        document.getElementById('search').addEventListener('input', filterCampaigns);
+    })
+    .catch(error => {
+        document.getElementById('campaigns-grid').innerHTML = '<p class="text-muted">Unable to load campaigns.</p>';
+    });
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+class CampaignsList {
+    constructor() {
+        this.currentPage = 1;
+        this.searchTerm = '';
+        this.tokenFilter = '';
+        this.init();
+    }
+
+    init() {
+        this.loadCampaigns();
+        this.setupEventListeners();
+    }
+
+    setupEventListeners() {
+        // Search functionality
+        const searchInput = document.getElementById('search-campaigns');
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                this.searchTerm = e.target.value;
+                this.currentPage = 1;
+                this.loadCampaigns();
+            }, 500);
+        });
+
+        // Token filter
+        document.getElementById('token-filter').addEventListener('change', (e) => {
+            this.tokenFilter = e.target.value;
+            this.currentPage = 1;
+            this.loadCampaigns();
+        });
+    }
+
+    async loadCampaigns() {
+        try {
+            const params = new URLSearchParams({
+                page: this.currentPage,
+                search: this.searchTerm,
+                token: this.tokenFilter
+            });
+
+            const response = await fetch(`/api/campaigns/?${params}`);
+            const data = await response.json();
+
+            this.renderCampaigns(data.results || []);
+            this.renderPagination(data);
+
+        } catch (error) {
+            console.error('Error loading campaigns:', error);
+            this.renderError();
+        }
+    }
+
+    renderCampaigns(campaigns) {
+        const grid = document.getElementById('campaigns-grid');
+        
+        if (campaigns.length === 0) {
+            grid.innerHTML = `
+                <div class="col-12 text-center py-5">
+                    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                    <h4 class="text-muted">No campaigns found</h4>
+                    <p class="text-muted">Try adjusting your search filters</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = campaigns.map(campaign => `
+            <div class="col-lg-4 col-md-6">
+                <div class="card h-100 shadow-sm campaign-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h5 class="card-title">${campaign.title}</h5>
+                            <div class="token-badges">
+                                ${campaign.token_options.map(token => 
+                                    `<span class="badge bg-${token === 'AVAX' ? 'danger' : 'success'} me-1">${token}</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        
+                        <p class="card-text text-muted">${this.truncateText(campaign.description, 120)}</p>
+                        
+                        <div class="campaign-meta mb-3">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-building text-primary me-2"></i>
+                                <strong>${campaign.ngo_name}</strong>
+                            </div>
+                            ${campaign.min_amount ? `
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-coins text-warning me-2"></i>
+                                    <span class="text-muted">Min: ${campaign.min_amount} ${campaign.token_options[0]}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="campaign-progress mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="text-muted">Donations received</small>
+                                <small class="text-muted">${campaign.total_donations || 0}</small>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar bg-success" style="width: ${Math.min((campaign.total_donations || 0) / 100 * 100, 100)}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-footer bg-transparent">
+                        <div class="d-flex gap-2">
+                            <a href="/campaigns/${campaign.id}/" class="btn btn-primary flex-fill">
+                                <i class="fas fa-heart me-1"></i>Donate
+                            </a>
+                            <button class="btn btn-outline-secondary" onclick="this.shareToTelegram(${campaign.id})" title="Share on Telegram">
+                                <i class="fab fa-telegram"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    renderPagination(data) {
+        const pagination = document.getElementById('campaigns-pagination');
+        if (!data.count || data.count <= 10) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        const totalPages = Math.ceil(data.count / 10);
+        let paginationHtml = '';
+
+        // Previous button
+        paginationHtml += `
+            <li class="page-item ${this.currentPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="campaignsList.changePage(${this.currentPage - 1})">Previous</a>
+            </li>
+        `;
+
+        // Page numbers
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
+                paginationHtml += `
+                    <li class="page-item ${i === this.currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="campaignsList.changePage(${i})">${i}</a>
+                    </li>
+                `;
+            } else if (i === this.currentPage - 3 || i === this.currentPage + 3) {
+                paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            }
+        }
+
+        // Next button
+        paginationHtml += `
+            <li class="page-item ${this.currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="campaignsList.changePage(${this.currentPage + 1})">Next</a>
+            </li>
+        `;
+
+        pagination.innerHTML = paginationHtml;
+    }
+
+    changePage(page) {
+        this.currentPage = page;
+        this.loadCampaigns();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    truncateText(text, maxLength) {
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    shareToTelegram(campaignId) {
+        const telegramBotUrl = 'https://t.me/YOUR_BOT_USERNAME'; // Replace with actual bot username
+        const shareUrl = `${telegramBotUrl}?start=campaign_${campaignId}`;
+        window.open(shareUrl, '_blank');
+    }
+
+    renderError() {
+        document.getElementById('campaigns-grid').innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                <h4 class="text-muted">Unable to load campaigns</h4>
+                <p class="text-muted">Please try again later</p>
+                <button class="btn btn-primary" onclick="campaignsList.loadCampaigns()">Retry</button>
+            </div>
+        `;
+    }
+}
+
+// Initialize campaigns list
+const campaignsList = new CampaignsList();
+</script>
+{% endblock %}

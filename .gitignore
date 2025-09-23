@@ -1,0 +1,26 @@
+*.env
+*.pyc
+__pycache__/
+db.sqlite3
+venv/
+.venv/
+env/
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.sqlite3
+*.sqlite
+*.db
+*.bak
+*.swp
+*.swo
+*.egg-info/
+dist/
+build/
+*.pyo
+*.pyd
+*.cover
+
+# Ignore archived code directories
+archives/

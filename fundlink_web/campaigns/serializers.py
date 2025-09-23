@@ -1,0 +1,51 @@
+from rest_framework import serializers
+from .models import Campaign, ImpactPost
+from ngos.serializers import NGOPublicSerializer
+
+
+class CampaignSerializer(serializers.ModelSerializer):
+    ngo = NGOPublicSerializer(read_only=True)
+    is_live = serializers.ReadOnlyField()
+    total_donations = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = Campaign
+        fields = ['id', 'ngo', 'title', 'description', 'token_options', 
+                 'min_amount', 'target_amount', 'is_live', 'total_donations', 'created_at']
+
+
+class CampaignCreateSerializer(serializers.ModelSerializer):
+    """Serializer for NGOs to create campaigns"""
+    
+    class Meta:
+        model = Campaign
+        fields = ['title', 'description', 'token_options', 'min_amount', 'target_amount']
+    
+    def validate_token_options(self, value):
+        valid_tokens = ['AVAX', 'USDT']
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Token options must be a list.")
+        if not all(token in valid_tokens for token in value):
+            raise serializers.ValidationError(f"Invalid token. Valid options: {valid_tokens}")
+        return value
+
+
+class ImpactPostSerializer(serializers.ModelSerializer):
+    campaign_title = serializers.CharField(source='campaign.title', read_only=True)
+    ngo_name = serializers.CharField(source='campaign.ngo.name', read_only=True)
+    
+    class Meta:
+        model = ImpactPost
+        fields = ['id', 'campaign', 'campaign_title', 'ngo_name', 'title', 
+                 'body', 'media_url', 'published', 'created_at']
+        read_only_fields = ['published', 'created_at']
+
+
+class ImpactPostPublicSerializer(serializers.ModelSerializer):
+    """Public serializer for published impact posts"""
+    campaign_title = serializers.CharField(source='campaign.title', read_only=True)
+    ngo_name = serializers.CharField(source='campaign.ngo.name', read_only=True)
+    
+    class Meta:
+        model = ImpactPost
+        fields = ['id', 'campaign_title', 'ngo_name', 'title', 'body', 'media_url', 'created_at']

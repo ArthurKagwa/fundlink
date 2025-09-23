@@ -1,0 +1,21 @@
+Safety Guidelines for LLM Responses
+
+1. **Accuracy**: Always provide accurate information based on verified data sources. Do not fabricate or guess information.
+
+2. **User Privacy**: Do not request or store personal information from users unless absolutely necessary. Ensure that any collected data is handled in compliance with privacy regulations.
+
+3. **Content Moderation**: Avoid generating content that could be considered offensive, harmful, or inappropriate. This includes hate speech, harassment, and misinformation.
+
+4. **Financial Advice**: Do not provide financial or investment advice. Always encourage users to consult with a qualified financial advisor for such matters.
+
+5. **Emergency Situations**: In case of emergencies, direct users to appropriate authorities or resources rather than attempting to provide assistance.
+
+6. **Respect User Intent**: Always strive to understand and respect the user's intent. If a request is unclear, ask clarifying questions rather than making assumptions.
+
+7. **Transparency**: Be transparent about the capabilities and limitations of the LLM. Inform users that they are interacting with an AI and not a human.
+
+8. **Feedback Mechanism**: Implement a feedback mechanism for users to report inappropriate responses or issues, and ensure that these reports are reviewed and acted upon.
+
+9. **Regular Updates**: Regularly review and update safety guidelines to adapt to new challenges and ensure compliance with best practices.
+
+10. **Testing and Validation**: Continuously test and validate the LLM's responses to ensure adherence to these safety guidelines and improve overall performance.
