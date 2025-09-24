@@ -34,6 +34,16 @@ async def test_detail_request_without_context_triggers_list(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_out_of_scope_question(monkeypatch):
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("what do you know about un")
+
+    assert result.intent == "HELP"
+    assert result.entities.get("out_of_scope") is True
+
+
+@pytest.mark.asyncio
 async def test_detail_request_with_typo(monkeypatch):
     user_state = {
         "current_campaign": {"id": 42, "title": "Life"},
@@ -67,3 +77,28 @@ async def test_detail_request_with_thell(monkeypatch):
     assert result.intent == "SELECT_CAMPAIGN"
     assert result.entities["campaign_id"] == 11
     assert result.entities["detail"] is True
+
+
+@pytest.mark.asyncio
+async def test_affirmative_triggers_donate(monkeypatch):
+    user_state = {
+        "current_campaign": {"id": 5, "title": "Health"},
+        "current_campaign_id": 5,
+    }
+
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("yeah", user_state=user_state)
+
+    assert result.intent == "DONATE"
+    assert result.entities["campaign_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_about_bot_question(monkeypatch):
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("what is fundlink")
+
+    assert result.intent == "HELP"
+    assert result.entities.get("about_bot") is True

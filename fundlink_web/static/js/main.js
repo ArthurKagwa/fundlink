@@ -118,15 +118,18 @@ class FundLinkUtils {
             throw new Error('Invalid recipient address');
         }
 
+        const chainId = '43113';
+        const base = `https://link.metamask.io/send/${recipientAddress}@${chainId}`;
+
         if (token === 'AVAX') {
             // Convert AVAX to wei (18 decimals)
             const amountWei = (parseFloat(amount) * Math.pow(10, 18)).toString();
-            return `https://metamask.app.link/send/${recipientAddress}?value=${amountWei}`;
+            return `${base}?value=${amountWei}`;
         } else if (token === 'USDT') {
             // USDT has 6 decimals
             const amountUSDT = (parseFloat(amount) * Math.pow(10, 6)).toString();
             const usdtContract = '0x5425890298aed601595a70AB815c96711a31Bc65';
-            return `https://metamask.app.link/send/${recipientAddress}?value=${amountUSDT}&contractAddress=${usdtContract}`;
+            return `${base}?asset=${usdtContract}&value=${amountUSDT}`;
         } else {
             throw new Error('Unsupported token');
         }

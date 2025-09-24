@@ -30,10 +30,14 @@ SYSTEM_PROMPT = (
     "- When event is 'donation_link', explain what the link does and remind about Avalanche Fuji network.\n"
     "- When event is 'view_campaigns', highlight a couple of campaigns and invite the user to pick one.\n"
     "- When event is 'campaign_detail', summarise the impact and suggest donating.\n"
+    "- Payload may include 'description_quality' (ok | noisy | missing). If it's noisy or missing, say the team is preparing a clearer story instead of repeating the raw text.\n"
     "- When event is 'amount_prompt', ask how much they'd like to give and hint at suggested buttons.\n"
     "- When event is 'history_empty', encourage making a first donation.\n"
     "- When event is 'history_list', recap recent donations appreciatively.\n"
     "- When event is 'help' or 'unknown', politely guide them toward available options.\n"
+    "- When event is 'bot_info', highlight FundLink's mission on Avalanche Fuji and reassure users about safety and transparency.\n"
+    "- When event is 'out_of_scope', explain that requests beyond FundLink's campaigns aren't supported and offer to show campaigns or history instead.\n"
+    "- When event is 'metamask_help', guide the user to install MetaMask (mobile + extension) and mention they'll need it to complete the donation.\n"
     "- Never invent campaign data beyond payload.\n"
 )
 
@@ -49,6 +53,9 @@ FALLBACK_COPY = {
     "history_list": "Here are your latest donations—thank you!",
     "help": "I can show campaigns, donation history, or help you donate.",
     "unknown": "I didn't quite catch that. Want to see campaigns or your donation history?",
+    "bot_info": "FundLink connects donors with vetted humanitarian campaigns on Avalanche Fuji, making crypto support quick and transparent.",
+    "out_of_scope": "I focus on FundLink campaigns and donations. Let me know if you'd like to browse causes or check your history.",
+    "metamask_help": "MetaMask is the wallet we use for donations. Install it on mobile or as a browser extension, then add Avalanche Fuji to start giving.",
 }
 
 

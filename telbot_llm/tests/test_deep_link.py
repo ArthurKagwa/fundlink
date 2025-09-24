@@ -4,7 +4,7 @@ from telbot_llm.deep_link import make_metamask_deep_link
 def test_make_metamask_deep_link_avax():
     res = make_metamask_deep_link("0x1111111111111111111111111111111111111111", 0.5)
     assert res["token"] == "AVAX"
-    assert res["deep_link"].startswith("https://metamask.app.link/send/0x1111")
+    assert res["deep_link"].startswith("https://link.metamask.io/send/0x1111")
     assert res["value_base_units"].isdigit()
 
 

@@ -14,3 +14,16 @@ async def test_generate_message_fallback(monkeypatch):
 
     assert isinstance(result, GeneratedMessage)
     assert result.text
+
+
+@pytest.mark.asyncio
+async def test_generate_bot_info(monkeypatch):
+    async def boom(_):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr("telbot_llm.dialogue_renderer.complete", boom)
+
+    result = await generate_message("bot_info", {}, None)
+
+    assert isinstance(result, GeneratedMessage)
+    assert "fundlink" in result.text.lower()

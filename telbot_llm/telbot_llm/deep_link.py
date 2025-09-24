@@ -20,16 +20,20 @@ def make_metamask_deep_link(address: str, amount: float, token: str | None = Non
     if not (addr.startswith("0x") and len(addr) == 42):
         return {"error": "invalid_address"}
 
+    base = f"https://link.metamask.io/send/{addr}@{FUJI_CHAIN_ID}"
+
     if token:
         if decimals is None:
             return {"error": "decimals_required"}
         quant = (Decimal(str(amount)) * (Decimal(10) ** decimals)).to_integral_value(rounding=ROUND_DOWN)
-        link = f"https://metamask.app.link/send/{addr}?asset={token}&value={quant}&chainId={FUJI_CHAIN_ID}"
+        query = f"asset={token}&value={quant}"
         symbol = token
     else:
         quant = (Decimal(str(amount)) * (Decimal(10) ** 18)).to_integral_value(rounding=ROUND_DOWN)
-        link = f"https://metamask.app.link/send/{addr}?value={quant}&chainId={FUJI_CHAIN_ID}"
+        query = f"value={quant}"
         symbol = "AVAX"
+
+    link = f"{base}?{query}"
 
     return {
         "to": addr,

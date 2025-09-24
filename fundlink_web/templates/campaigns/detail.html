@@ -80,10 +80,10 @@ function setAmount(value) {
 function generateMetaMaskLink(token, amount) {
     if (token === 'AVAX') {
         const wei = (parseFloat(amount) * Math.pow(10, 18)).toString(16);
-        return `https://metamask.app.link/send/${ngoWallet}?value=0x${wei}`;
+        return `https://link.metamask.io/send/${ngoWallet}@43113?value=0x${wei}`;
     } else {
         // For USDT and other tokens, this would need contract interaction
-        return `https://metamask.app.link/send/${ngoWallet}`;
+        return `https://link.metamask.io/send/${ngoWallet}@43113`;
     }
 }
 
@@ -409,12 +409,12 @@ class CampaignDetail {
         if (token === 'AVAX') {
             // Convert AVAX to wei (18 decimals)
             const amountWei = (parseFloat(amount) * Math.pow(10, 18)).toString();
-            metamaskUrl = `https://metamask.app.link/send/${this.ngoWalletAddress}?value=${amountWei}`;
+            metamaskUrl = `https://link.metamask.io/send/${this.ngoWalletAddress}@43113?value=${amountWei}`;
         } else if (token === 'USDT') {
             // USDT has 6 decimals
             const amountUSDT = (parseFloat(amount) * Math.pow(10, 6)).toString();
             const usdtContract = '0x5425890298aed601595a70AB815c96711a31Bc65';
-            metamaskUrl = `https://metamask.app.link/send/${this.ngoWalletAddress}?value=${amountUSDT}&contractAddress=${usdtContract}`;
+            metamaskUrl = `https://link.metamask.io/send/${this.ngoWalletAddress}@43113?asset=${usdtContract}&value=${amountUSDT}`;
         }
 
         // Open MetaMask deep link

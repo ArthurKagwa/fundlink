@@ -70,6 +70,10 @@ async def handle_intent(
         return await show_history(telegram_id)
 
     if intent == "HELP":
+        if entities.get("about_bot"):
+            return await bot_info(user_state)
+        if entities.get("out_of_scope"):
+            return await out_of_scope(user_state)
         return await help_menu(user_state)
 
     return await unknown_menu(user_state)
@@ -136,12 +140,14 @@ async def select_campaign(
 
     if detail_requested:
         user_state["conversation_context"] = "campaign_detail"
+        description_text, description_quality = _prepare_description(campaign.get("description"))
         generated = await generate_message(
             "campaign_detail",
             {
                 "title": campaign.get("title"),
                 "ngo_name": campaign.get("ngo_name"),
-                "description": campaign.get("description"),
+                "description": description_text,
+                "description_quality": description_quality,
                 "min_amount": str(campaign.get("min_amount")),
                 "target_amount": str(campaign.get("target_amount")),
             },
@@ -255,15 +261,9 @@ async def donate_flow(user_state: Dict[str, Any], entities: Dict[str, Any]) -> A
         user_state,
     )
     buttons = [
-        [
-            ButtonSpec(text="🦊 Donate with MetaMask", url=deep_link["deep_link"]),
-        ],
-        [
-            ButtonSpec(
-                text="➕ Add Avalanche Fuji",
-                url="https://metamask.app.link/dapp/chainlist.org/chain/43113",
-            )
-        ],
+        [ButtonSpec(text="🦊 Donate with MetaMask", url=deep_link["deep_link"]),],
+        [ButtonSpec(text="⬇️ Install MetaMask", callback={"a": "mmhelp"})],
+        [ButtonSpec(text="➕ Add Avalanche Fuji", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")],
     ]
     message = AgentMessage(text=generated.text, parse_mode=generated.parse_mode, buttons=buttons)
     return AgentResponse(messages=[message], clear_state=True)
@@ -331,6 +331,46 @@ async def unknown_menu(user_state: Optional[Dict[str, Any]] = None) -> AgentResp
     return AgentResponse(messages=[message])
 
 
+async def bot_info(user_state: Optional[Dict[str, Any]] = None) -> AgentResponse:
+    generated = await generate_message("bot_info", {}, user_state)
+    message = AgentMessage(
+        text=generated.text,
+        parse_mode=generated.parse_mode,
+        buttons=[
+            [ButtonSpec(text="📜 View Campaigns", callback={"a": "campaigns"})],
+            [ButtonSpec(text="📋 My Donation History", callback={"a": "history"})],
+        ],
+    )
+    return AgentResponse(messages=[message])
+
+
+async def out_of_scope(user_state: Optional[Dict[str, Any]] = None) -> AgentResponse:
+    generated = await generate_message("out_of_scope", {}, user_state)
+    message = AgentMessage(
+        text=generated.text,
+        parse_mode=generated.parse_mode,
+        buttons=[
+            [ButtonSpec(text="📜 Campaigns", callback={"a": "campaigns"})],
+            [ButtonSpec(text="📋 My History", callback={"a": "history"})],
+        ],
+    )
+    return AgentResponse(messages=[message])
+
+
+async def metamask_help(user_state: Optional[Dict[str, Any]] = None) -> AgentResponse:
+    generated = await generate_message("metamask_help", {}, user_state)
+    message = AgentMessage(
+        text=generated.text,
+        parse_mode=generated.parse_mode,
+        buttons=[
+            [ButtonSpec(text="⬇️ MetaMask Mobile", url="https://metamask.app.link/download")],
+            [ButtonSpec(text="🖥️ MetaMask Extension", url="https://metamask.io/download/")],
+            [ButtonSpec(text="↩️ Back", callback={"a": "campaigns"})],
+        ],
+    )
+    return AgentResponse(messages=[message])
+
+
 async def handle_callback(
     action: str,
     data: Dict[str, Any],
@@ -383,12 +423,14 @@ async def handle_callback(
         campaign = await _campaign_from_entities(user_state, {"campaign_id": campaign_id})
         if not campaign:
             return await view_campaigns(user_state)
+        description_text, description_quality = _prepare_description(campaign.get("description"))
         generated = await generate_message(
             "campaign_detail",
             {
                 "title": campaign.get("title"),
                 "ngo_name": campaign.get("ngo_name"),
-                "description": campaign.get("description"),
+                "description": description_text,
+                "description_quality": description_quality,
                 "min_amount": str(campaign.get("min_amount")),
                 "target_amount": str(campaign.get("target_amount")),
             },
@@ -410,6 +452,9 @@ async def handle_callback(
 
     if action == "campaigns":
         return await view_campaigns(user_state)
+
+    if action == "mmhelp":
+        return await metamask_help(user_state)
 
     return await unknown_menu(user_state)
 
@@ -518,6 +563,24 @@ def _amount_buttons(campaign: Dict[str, Any], token: str) -> List[List[ButtonSpe
     return rows
 
 
+def _prepare_description(raw: Any) -> tuple[str, str]:
+    if not raw:
+        return "", "missing"
+    text = str(raw).strip()
+    if not text:
+        return "", "missing"
+    words = text.split()
+    if not words:
+        return "", "missing"
+    total = len(words)
+    digit_words = sum(1 for w in words if any(ch.isdigit() for ch in w))
+    non_alpha_chars = sum(1 for ch in text if not (ch.isalpha() or ch.isspace() or ch in "',.-"))
+    letter_ratio = sum(1 for ch in text if ch.isalpha()) / max(len(text), 1)
+    if letter_ratio < 0.5 or digit_words / total > 0.3 or non_alpha_chars / max(len(text), 1) > 0.15:
+        return text, "noisy"
+    return text, "ok"
+
+
 def _format_amount(amount: Decimal) -> str:
     quantized = amount.normalize()
     return f"{quantized}".rstrip("0").rstrip(".") if "." in f"{quantized}" else f"{quantized}"
@@ -547,4 +610,7 @@ __all__ = [
     "show_history",
     "help_menu",
     "unknown_menu",
+    "bot_info",
+    "out_of_scope",
+    "metamask_help",
 ]

@@ -27,7 +27,8 @@ def test_deep_link():
     )
     print(f"AVAX Link: {avax_result.get('deep_link', 'ERROR')}")
     assert "deep_link" in avax_result
-    assert "43113" in avax_result["deep_link"]  # Fuji chain ID
+    assert "link.metamask.io/send" in avax_result["deep_link"]
+    assert "@43113" in avax_result["deep_link"]  # Fuji chain ID encoded in path
     
     # Test USDT link
     usdt_result = make_metamask_deep_link(
@@ -38,7 +39,7 @@ def test_deep_link():
     )
     print(f"USDT Link: {usdt_result.get('deep_link', 'ERROR')}")
     assert "deep_link" in usdt_result
-    assert "5425890298aed601595a70AB815c96711a31Bc65" in usdt_result["deep_link"]
+    assert "asset=0x5425890298aed601595a70AB815c96711a31Bc65" in usdt_result["deep_link"]
     
     print("✅ Deep link generation working correctly!")
 

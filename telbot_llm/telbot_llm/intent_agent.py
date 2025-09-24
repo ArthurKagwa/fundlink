@@ -182,24 +182,82 @@ async def classify_intent(
 
     has_about = _token_like("about") or "about" in lowered
     has_question = any(_token_like(option) for option in ["what", "whats", "what's", "wat"])
-    has_tell = any(tok.startswith("tell") or tok.startswith("thell") or SequenceMatcher(None, tok, "tell").ratio() >= 0.75 for tok in tokens)
+    has_tell = any(
+        tok.startswith("tell")
+        or tok.startswith("thell")
+        or SequenceMatcher(None, tok, "tell").ratio() >= 0.75
+        for tok in tokens
+    )
     has_detail_word = any(_token_like(option) for option in ["detail", "details"])
     has_more_info = "more info" in lowered or "more information" in lowered
+    pronoun_tokens = ["it", "its", "this", "that", "them", "they", "one", "these"]
+    has_pronoun_reference = any(_token_like(pron, 0.7) for pron in pronoun_tokens)
+    has_question_word = any(_token_like(word) for word in ["what", "when", "who", "where", "why", "how"])
+
+    fundlink_terms = ["fundlink", "fund-link", "fund link"]
+    mentions_fundlink = any(term in lowered for term in fundlink_terms) or _token_like("fundlink")
+    if mentions_fundlink and (has_question_word or has_about or "info" in tokens or "information" in tokens):
+        return IntentPrediction(
+            intent="HELP",
+            entities={"about_bot": True},
+            confidence=0.85,
+            raw={"intent": "HELP", "entities": {"about_bot": True}, "heuristic": "about_bot"},
+        )
+
+    def _match_campaign_from_tokens(candidates: list[Dict[str, Any]]) -> Optional[int]:
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            cid = candidate.get("id")
+            if not cid:
+                continue
+            title = str(candidate.get("title", "")).lower()
+            parts = [part for part in re.split(r"\s+", title) if part]
+            for part in parts:
+                if any(SequenceMatcher(None, tok, part).ratio() >= 0.75 for tok in tokens):
+                    try:
+                        return int(cid)
+                    except (TypeError, ValueError):
+                        return None
+        return None
 
     if has_about and (has_question or has_tell or has_detail_word or has_more_info):
         campaign = None
         campaign_id = None
+        matched_campaign_id: Optional[int] = None
         if user_state:
             campaign = user_state.get("current_campaign")
             if campaign and isinstance(campaign, dict):
-                campaign_id = campaign.get("id")
-            if not campaign_id:
-                shown = user_state.get("last_shown_campaigns") or []
-                if shown:
-                    campaign = shown[0]
-                    if isinstance(campaign, dict):
-                        campaign_id = campaign.get("id")
-        if campaign_id:
+                try:
+                    campaign_id = int(campaign.get("id"))
+                except (TypeError, ValueError):
+                    campaign_id = None
+
+            candidates: list[Dict[str, Any]] = []
+            last_shown = user_state.get("last_shown_campaigns") or []
+            if isinstance(last_shown, list):
+                candidates.extend([c for c in last_shown if isinstance(c, dict)])
+            if campaign and isinstance(campaign, dict):
+                candidates.append(campaign)
+
+            matched_campaign_id = _match_campaign_from_tokens(candidates)
+            if matched_campaign_id:
+                campaign_id = matched_campaign_id
+
+            if not campaign_id and has_pronoun_reference:
+                if campaign and isinstance(campaign, dict):
+                    try:
+                        campaign_id = int(campaign.get("id"))
+                    except (TypeError, ValueError):
+                        campaign_id = None
+                if not campaign_id and candidates:
+                    first = candidates[0]
+                    try:
+                        campaign_id = int(first.get("id"))
+                    except (TypeError, ValueError):
+                        campaign_id = None
+
+        if campaign_id and (matched_campaign_id or has_pronoun_reference):
             return IntentPrediction(
                 intent="SELECT_CAMPAIGN",
                 entities={"campaign_id": int(campaign_id), "detail": True},
@@ -210,13 +268,38 @@ async def classify_intent(
                     "heuristic": "detail",
                 },
             )
-        # No campaign in context yet – surface the campaign list so user can pick
+        if has_pronoun_reference:
+            return IntentPrediction(
+                intent="VIEW_CAMPAIGNS",
+                entities={},
+                confidence=0.7,
+                raw={"intent": "VIEW_CAMPAIGNS", "entities": {}, "heuristic": "detail_no_context"},
+            )
         return IntentPrediction(
-            intent="VIEW_CAMPAIGNS",
-            entities={},
-            confidence=0.7,
-            raw={"intent": "VIEW_CAMPAIGNS", "entities": {}, "heuristic": "detail_no_context"},
+            intent="HELP",
+            entities={"out_of_scope": True},
+            confidence=0.65,
+            raw={"intent": "HELP", "entities": {"out_of_scope": True}, "heuristic": "out_of_scope"},
         )
+
+    yes_tokens = {"yes", "yeah", "yep", "ya", "yah", "sure", "ok", "okay", "affirmative"}
+    if tokens and all(tok in yes_tokens for tok in tokens):
+        if user_state:
+            campaign = user_state.get("current_campaign")
+            campaign_id = None
+            if campaign and isinstance(campaign, dict):
+                campaign_id = campaign.get("id")
+            if not campaign_id:
+                current_id = user_state.get("current_campaign_id")
+                if current_id:
+                    campaign_id = current_id
+            if campaign_id:
+                return IntentPrediction(
+                    intent="DONATE",
+                    entities={"campaign_id": int(campaign_id)},
+                    confidence=0.85,
+                    raw={"intent": "DONATE", "entities": {"campaign_id": campaign_id}, "heuristic": "affirmative"},
+                )
 
     messages = [{"role": "system", "content": INTENT_SYSTEM_PROMPT}]
 
