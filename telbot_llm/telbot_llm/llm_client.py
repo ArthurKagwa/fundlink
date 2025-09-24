@@ -24,66 +24,57 @@ def _client():
 
 
 SYSTEM = (
-    "You are FundLink's donation assistant - a knowledgeable, helpful guide for humanitarian donations on Avalanche Fuji testnet.\n\n"
+    "You are FundLink's donation assistant for humanitarian campaigns on Avalanche Fuji testnet.\n\n"
     
-    "CONVERSATION STYLE:\n"
-    "- Be natural, conversational, and informative\n"
-    "- Understand context and user intent beyond keywords\n"
-    "- Provide detailed information when asked\n"
-    "- Don't just show buttons - explain what's available and why it matters\n"
-    "- Remember conversation context and build on previous exchanges\n\n"
+    "🚨 CRITICAL FUNCTION CALLING RULES:\n"
+    "- ALWAYS call functions rather than mentioning them in text\n" 
+    "- Functions are tools to be EXECUTED, not described\n"
+    "- You can call multiple functions in sequence during a conversation\n"
+    "- Provide natural, helpful responses along with function calls\n\n"
     
-    "COMPLETE TOOLSET - USE INTELLIGENTLY BASED ON CONTEXT:\n\n"
+    "COMMON WORKFLOWS:\n"
+    "1. When users ask about campaigns ('What campaigns', 'Hi', 'Show me campaigns'):\n"
+    "   - First call list_campaigns() to get data\n"
+    "   - Then call show_option_buttons() to show interactive options\n"
+    "   - Provide friendly text about what's available\n\n"
     
-    "📋 INFORMATION TOOLS (use these to gather data for informed responses):\n"
-    "- list_campaigns() → Get all active campaigns with details (NGO, title, description, amounts, etc.)\n"
-    "- get_campaign(campaign_id) → Get specific campaign details by ID\n"
-    "- get_donations(telegram_id) → Get user's donation history and past contributions\n\n"
+    "2. When users want to donate or see details:\n"
+    "   - Call appropriate functions (get_campaign, show_amount_buttons)\n"
+    "   - Guide them through the process\n\n"
     
-    "🎯 INTERACTIVE TOOLS (use when user is ready for action):\n"
-    "- show_campaign_buttons() → Show campaign selection as clickable buttons\n"
-    "- show_amount_buttons(campaign_id) → Show donation amount options for specific campaign\n"
-    "- make_metamask_deep_link(address, amount, token?, decimals?) → Generate donation link\n\n"
+    "AVAILABLE FUNCTIONS (CALL THESE, DON'T MENTION THEM):\n"
+    "- list_campaigns() → Get active campaigns\n" 
+    "- show_option_buttons(message, options) → Show interactive buttons\n"
+    "- get_donations(telegram_id) → Get user donation history\n"
+    "- make_metamask_deep_link(address, amount, token?, decimals?) → Create donation link\n\n"
     
-    "👥 USER MANAGEMENT TOOLS:\n"
-    "- user_exists(telegram_id) → Check if user is registered\n"
-    "- register_user(telegram_id, username?) → Register new user (automatic, silent)\n"
-    "- notify_donor(telegram_id, message) → Send notification to user\n\n"
+    "BUTTON OPTIONS FORMAT:\n"
+    "When calling show_option_buttons(), use options like:\n"
+    "[{text: '📖 Learn More', action: 'campaign_detail', campaign_id: 1},\n"
+    " {text: '💝 Donate Now', action: 'donate', campaign_id: 1},\n"
+    " {text: '📋 My History', action: 'history'}]\n\n"
     
-    "🏢 NGO TOOLS:\n"
-    "- apply_ngo(name, email, wallet_address, website?) → Submit NGO application\n\n"
+    "RESPONSE STYLE:\n"
+    "- Be friendly and conversational\n"
+    "- Focus on humanitarian impact\n"
+    "- Never show technical details or IDs to users\n"
+    "- Always provide interactive elements when appropriate\n\n"
     
-    "INTELLIGENT TOOL USAGE PATTERNS:\n"
-    "1. EXPLORATION QUERIES ('What campaigns?', 'Tell me about...'):\n"
-    "   → Use list_campaigns() first, then provide rich, conversational summaries\n"
-    "   → Only show buttons after explaining what's available\n\n"
-    
-    "2. SPECIFIC QUESTIONS ('What is X about?', 'Details on campaign Y'):\n"
-    "   → Use get_campaign() for specific info, or list_campaigns() to find matches\n"
-    "   → Provide detailed, educational responses about impact and goals\n\n"
-    
-    "3. DONATION INTENT ('I want to donate', 'How much?', amount mentioned):\n"
-    "   → Get campaign data first to explain impact\n"
-    "   → Use show_amount_buttons() for selection or make_metamask_deep_link() if amount specified\n\n"
-    
-    "4. USER HISTORY ('My donations', 'What have I given?'):\n"
-    "   → Use get_donations(telegram_id) to show their contribution history\n\n"
-    
-    "5. NGO APPLICATIONS ('Register NGO', 'Apply as organization'):\n"
-    "   → Use apply_ngo() with collected information\n\n"
-    
-    "TOKENS & TECHNICAL:\n"
-    "- AVAX: no token address, decimals=18\n"
-    "- USDT: token='0x5425890298aed601595a70AB815c96711a31Bc65', decimals=6\n"
-    "- Always validate wallet addresses are checksummed for make_metamask_deep_link()\n\n"
-    
-    "CORE PRINCIPLE: Always use tools to get real, current data. Make informed decisions about which tools to use based on user intent, not just keywords. Educate users about humanitarian impact while guiding them toward meaningful action."
+    "REMEMBER: Execute functions to create great user experiences!"
 )
 
 
 def _extract_tool_call(message) -> Optional[Dict[str, Any]]:
+    """Extract the first tool call from a message"""
     if not hasattr(message, "tool_calls") or not message.tool_calls:
         return None
+    
+    # Debug: check if there are multiple tool calls
+    if len(message.tool_calls) > 1:
+        print(f"DEBUG - Multiple tool calls detected: {len(message.tool_calls)}")
+        for i, call in enumerate(message.tool_calls):
+            print(f"DEBUG - Tool call {i}: {call.function.name}")
+    
     call = message.tool_calls[0]
     raw_args = getattr(call.function, "arguments", {})
     if isinstance(raw_args, str):
@@ -94,6 +85,26 @@ def _extract_tool_call(message) -> Optional[Dict[str, Any]]:
     else:
         args = raw_args
     return {"name": call.function.name, "arguments": args}
+
+
+def _extract_all_tool_calls(message) -> List[Dict[str, Any]]:
+    """Extract all tool calls from a message"""
+    if not hasattr(message, "tool_calls") or not message.tool_calls:
+        return []
+    
+    tool_calls = []
+    for call in message.tool_calls:
+        raw_args = getattr(call.function, "arguments", {})
+        if isinstance(raw_args, str):
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError:
+                args = {}
+        else:
+            args = raw_args
+        tool_calls.append({"name": call.function.name, "arguments": args})
+    
+    return tool_calls
 
 
 async def chat_with_tools(user_text: str, telegram_id: str, history: Optional[List[Dict]] = None):
@@ -114,9 +125,18 @@ async def chat_with_tools(user_text: str, telegram_id: str, history: Optional[Li
                 temperature=TEMP,
             )
             out = resp.choices[0].message
-            tool_call = _extract_tool_call(out)
-            if tool_call:
-                return {"tool_call": tool_call, "messages": messages, "model": model}
+            
+            # Check for multiple tool calls
+            all_tool_calls = _extract_all_tool_calls(out)
+            if all_tool_calls:
+                return {
+                    "tool_calls": all_tool_calls,
+                    "tool_call": all_tool_calls[0],  # Keep backward compatibility
+                    "text": out.content.strip() if out.content else "",
+                    "messages": messages, 
+                    "model": model
+                }
+            
             text = out.content if out.content else ""
             return {"text": text.strip(), "messages": messages, "model": model}
         except Exception as e:  # pragma: no cover - network/model errors
@@ -133,21 +153,55 @@ async def continue_with_tool_result(state: Dict[str, Any], tool_result: Any):
         resp = c.chat.completions.create(
             model=model,
             messages=messages,
+            tools=TOOLS,  # Enable tool calling in continuation
+            tool_choice="auto",
             temperature=TEMP,
         )
         out = resp.choices[0].message
-        return out.content.strip()
+        
+        # Check if the response contains a tool call
+        tool_call = _extract_tool_call(out)
+        if tool_call:
+            return {"tool_call": tool_call, "text": out.content.strip() if out.content else "", "messages": messages, "model": model}
+        
+        return {"text": out.content.strip() if out.content else "", "messages": messages, "model": model}
     except Exception:  # pragma: no cover
-        return f"Result: {_truncate(tool_result, 600)}"  # graceful degrade
+        return {"text": f"Result: {_truncate(tool_result, 600)}", "messages": messages, "model": model}  # graceful degrade
 
 
 def _truncate(payload: Any, limit: int = 800) -> str:
+    """Clean and truncate tool results for LLM consumption"""
     try:
         if isinstance(payload, (dict, list)):
-            return json.dumps(payload, ensure_ascii=False)[:limit]
+            # Convert to JSON but clean up for better LLM processing
+            json_str = json.dumps(payload, ensure_ascii=False)
+            
+            # If it's campaign data, provide a cleaner summary for the LLM
+            if isinstance(payload, dict):
+                if 'results' in payload and isinstance(payload['results'], list):
+                    # This is likely a paginated campaign response
+                    campaigns = payload['results']
+                    summary = f"Found {len(campaigns)} active campaign(s): "
+                    for campaign in campaigns[:3]:  # Limit to 3 for brevity
+                        title = campaign.get('title', 'Untitled')
+                        ngo_name = campaign.get('ngo_name', 'Unknown NGO')
+                        min_amount = campaign.get('min_amount', '0')
+                        summary += f"'{title}' by {ngo_name} (min {min_amount} AVAX); "
+                    return summary.rstrip('; ')
+                elif 'title' in payload and 'ngo_name' in payload:
+                    # Single campaign data
+                    title = payload.get('title', 'Untitled')
+                    ngo_name = payload.get('ngo_name', 'Unknown NGO')
+                    description = payload.get('description', '').strip()
+                    min_amount = payload.get('min_amount', '0')
+                    target = payload.get('target_amount', '0')
+                    return f"Campaign '{title}' by {ngo_name}. Description: {description[:100]}... Min donation: {min_amount} AVAX, Target: {target} AVAX"
+            
+            # For other data, truncate JSON
+            return json_str[:limit]
         return str(payload)[:limit]
     except Exception:
-        return "<unserializable>"
+        return "<data processing error>"
 
 
 __all__ = [

@@ -129,6 +129,30 @@ async def _show_campaigns(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Couldn't load campaigns: {e}")
 
 
+async def _show_option_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, message: str, options: list, tg_id: str):
+    """Show custom option buttons"""
+    if not options:
+        await update.message.reply_text(message)
+        return
+    
+    keyboard = []
+    for option in options[:5]:  # Limit to 5 options
+        text = option.get('text', 'Option')
+        action = option.get('action', 'unknown')
+        campaign_id = option.get('campaign_id')
+        
+        # Create callback data
+        callback_data = json.dumps({
+            "a": action,
+            "c": campaign_id if campaign_id else None
+        })
+        
+        keyboard.append([InlineKeyboardButton(text, callback_data=callback_data)])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(message, reply_markup=reply_markup)
+
+
 async def _show_campaign_detail_with_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, user_state: dict):
     """Show campaign detail with amount selection buttons"""
     title = campaign.get('title', 'Campaign')
@@ -173,88 +197,153 @@ async def _show_campaign_detail_with_amounts(update: Update, context: ContextTyp
 async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, tg_id: str, started: float, metrics):
     """Handle all conversation through LLM with proper tool execution"""
     try:
+        print(f"DEBUG - Processing message: {text}")
         first = await chat_with_tools(text, tg_id)
+        print(f"DEBUG - LLM response: {first}")
         
-        if first.get("tool_call"):
-            tool = first["tool_call"]
-            result = None
+        # Check if we have multiple tool calls in the first response
+        if first.get("tool_calls") and len(first["tool_calls"]) > 1:
+            print(f"DEBUG - Processing {len(first['tool_calls'])} tool calls in sequence")
             
+            # Process all tool calls in sequence
+            for i, tool in enumerate(first["tool_calls"]):
+                print(f"DEBUG - Processing tool call {i+1}: {tool['name']}")
+                await _execute_tool_call(update, context, tool, tg_id, first)
+                
+            # Send the text response if any
+            if first.get("text"):
+                await update.message.reply_text(first["text"], disable_web_page_preview=True)
+            return
+        
+        # Single tool call or no tool call - use original logic
+        response = first
+        final_text = None
+        max_iterations = 3  # Prevent infinite loops
+        iteration = 0
+        
+        while response.get("tool_call") and iteration < max_iterations:
+            iteration += 1
+            tool = response["tool_call"]
+            print(f"DEBUG - Tool call {iteration}: {tool['name']}")
+            
+            # Execute the tool call
+            should_continue = await _execute_tool_call(update, context, tool, tg_id, response)
+            
+            # If it was a UI tool, break the loop
+            if not should_continue:
+                if response.get("text"):
+                    final_text = response.get("text")
+                break
+            
+            # For API tools, continue conversation
             try:
-                if tool["name"] == "make_metamask_deep_link":
-                    # Generate deep link and show as button
-                    result = make_metamask_deep_link(**tool["arguments"])
-                    if isinstance(result, dict) and "deep_link" in result and not result.get("error"):
-                        keyboard = [
-                            [InlineKeyboardButton("🦊 Donate with MetaMask", url=result["deep_link"])],
-                            [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
-                        ]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        
-                        # Extract donation details from tool arguments
-                        amount = tool["arguments"].get("amount", "")
-                        token_address = tool["arguments"].get("token")
-                        token_symbol = "USDT" if token_address else "AVAX"
-                        
-                        message_text = (
-                            f"Great! {amount} {token_symbol} donation ready\n\n"
-                            f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
-                            f"Tap to donate:"
-                        )
-                        await update.message.reply_text(
-                            message_text,
-                            reply_markup=reply_markup,
-                            parse_mode='Markdown'
-                        )
-                        clear_ephemeral_state(tg_id)
-                        return
-                        
-                elif tool["name"] == "show_campaign_buttons":
-                    # Show campaigns as inline buttons
-                    await _show_campaigns(update, context)
-                    return
-                    
-                elif tool["name"] == "show_amount_buttons":
-                    # Show amount selection buttons for a specific campaign
-                    campaign_id = tool["arguments"].get("campaign_id")
-                    if campaign_id:
-                        try:
-                            campaign = await call_django_api("get_campaign", {"campaign_id": campaign_id})
-                            if isinstance(campaign, dict):
-                                user_state = get_user_state(tg_id)
-                                user_state['current_campaign_id'] = campaign_id
-                                user_state['current_campaign'] = campaign
-                                await _show_campaign_detail_with_amounts(update, context, campaign, user_state)
-                                return
-                        except Exception as e:
-                            await update.message.reply_text(f"Error loading campaign: {e}")
-                            return
-                else:
-                    # Regular API tool call
-                    tool_args = tool["arguments"].copy()
-                    
-                    # Auto-inject telegram_id for user-specific tools
-                    if tool["name"] in ["get_donations", "register_user", "notify_donor"] and "telegram_id" not in tool_args:
-                        tool_args["telegram_id"] = tg_id
-                    
-                    result = await call_django_api(tool["name"], tool_args)
+                tool_args = tool["arguments"].copy()
+                
+                # Auto-inject telegram_id for user-specific tools
+                if tool["name"] in ["get_donations", "register_user", "notify_donor"] and "telegram_id" not in tool_args:
+                    tool_args["telegram_id"] = tg_id
+                
+                result = await call_django_api(tool["name"], tool_args)
+                print(f"DEBUG - Tool {tool['name']} result: {result}")
+                
+                # Continue conversation with tool result
+                response = await continue_with_tool_result(response, result)
+                print(f"DEBUG - Continue response: {response}")
+                
+                # If no more tool calls, save the text for final response
+                if not response.get("tool_call"):
+                    final_text = response.get("text", "")
+                    break
                     
             except Exception as e:
                 raise ToolExecutionError(str(e)) from e
-            
-            # Continue conversation with tool result
-            final_text = await continue_with_tool_result(first, result)
-        else:
-            # Direct LLM response
-            final_text = first.get("text", "(no response)")
+        
+        # Send final text response if we have one and haven't sent a UI response
+        if final_text:
+            print(f"DEBUG - Sending final text: {final_text}")
+            await update.message.reply_text(final_text, disable_web_page_preview=True)
+        elif not response.get("tool_call"):
+            # Direct LLM response without tool calls
+            final_text = response.get("text", "(no response)")
+            await update.message.reply_text(final_text, disable_web_page_preview=True)
             
     except (LLMError, BackendAPIError, ToolExecutionError) as e:
         final_text = f"Service issue: {e}"
+        await update.message.reply_text(final_text, disable_web_page_preview=True)
     except Exception:
         final_text = "Unexpected error. Please try again shortly."
+        await update.message.reply_text(final_text, disable_web_page_preview=True)
 
     if metrics:
         metrics.latency.observe(time.perf_counter() - started)
-    await update.message.reply_text(final_text, disable_web_page_preview=True)
+
+
+async def _execute_tool_call(update: Update, context: ContextTypes.DEFAULT_TYPE, tool: dict, tg_id: str, response: dict) -> bool:
+    """Execute a single tool call. Returns True if processing should continue, False if it was a UI tool."""
+    try:
+        if tool["name"] == "make_metamask_deep_link":
+            # Generate deep link and show as button
+            result = make_metamask_deep_link(**tool["arguments"])
+            if isinstance(result, dict) and "deep_link" in result and not result.get("error"):
+                keyboard = [
+                    [InlineKeyboardButton("🦊 Donate with MetaMask", url=result["deep_link"])],
+                    [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Extract donation details from tool arguments
+                amount = tool["arguments"].get("amount", "")
+                token_address = tool["arguments"].get("token")
+                token_symbol = "USDT" if token_address else "AVAX"
+                
+                message_text = (
+                    f"Great! {amount} {token_symbol} donation ready\n\n"
+                    f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
+                    f"Tap to donate:"
+                )
+                await update.message.reply_text(
+                    message_text,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                clear_ephemeral_state(tg_id)
+                return False  # UI tool completed
+                
+        elif tool["name"] == "show_campaign_buttons":
+            # Show campaigns as inline buttons
+            await _show_campaigns(update, context)
+            return False  # UI tool completed
+            
+        elif tool["name"] == "show_option_buttons":
+            # Show custom option buttons
+            message = tool["arguments"].get("message", "Choose an option:")
+            options = tool["arguments"].get("options", [])
+            await _show_option_buttons(update, context, message, options, tg_id)
+            return False  # UI tool completed
+            
+        elif tool["name"] == "show_amount_buttons":
+            # Show amount selection buttons for a specific campaign
+            campaign_id = tool["arguments"].get("campaign_id")
+            if campaign_id:
+                try:
+                    campaign = await call_django_api("get_campaign", {"campaign_id": campaign_id})
+                    if isinstance(campaign, dict):
+                        user_state = get_user_state(tg_id)
+                        user_state['current_campaign_id'] = campaign_id
+                        user_state['current_campaign'] = campaign
+                        await _show_campaign_detail_with_amounts(update, context, campaign, user_state)
+                        return False  # UI tool completed
+                except Exception as e:
+                    await update.message.reply_text(f"Error loading campaign: {e}")
+                    return False
+        else:
+            # This is an API tool call - should be handled by the caller
+            return True
+            
+    except Exception as e:
+        raise ToolExecutionError(str(e)) from e
+    
+    return True
 
 
 async def _show_campaign_detail_with_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, user_state: dict):
@@ -318,6 +407,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await _handle_amount_selection(query, context, data, tg_id, user_state)
         elif action == "tok":  # toggle_token
             await _handle_token_toggle(query, context, data, user_state)
+        elif action == "campaign_detail":  # show campaign details
+            await _handle_campaign_detail_request(query, context, data, tg_id)
+        elif action == "donate":  # show donation options
+            await _handle_donate_request(query, context, data, tg_id)
+        elif action == "history":  # show user history
+            await _handle_history_request(query, context, data, tg_id)
+        elif action == "campaigns":  # show all campaigns
+            await _handle_campaigns_request(query, context, data, tg_id)
         else:
             await query.edit_message_text(f"Unknown action: {action}")
     
@@ -478,6 +575,118 @@ async def _handle_token_toggle(query, context: ContextTypes.DEFAULT_TYPE, data: 
             await _show_amount_buttons(query, context, campaign, user_state)
     except Exception as e:
         await query.edit_message_text(f"Error: {e}")
+
+
+async def _handle_campaign_detail_request(query, context: ContextTypes.DEFAULT_TYPE, data: dict, tg_id: str):
+    """Handle request to show campaign details"""
+    campaign_id = data.get("c")
+    if not campaign_id:
+        await query.edit_message_text("Invalid campaign selection.")
+        return
+    
+    try:
+        campaign = await call_django_api("get_campaign", {"campaign_id": campaign_id})
+        if not isinstance(campaign, dict):
+            await query.edit_message_text("Campaign not found.")
+            return
+        
+        title = campaign.get('title', 'Campaign')
+        ngo_name = campaign.get('ngo_name', 'Unknown NGO')
+        description = campaign.get('description', 'No description available.')
+        min_amount = campaign.get('min_amount', '0')
+        target = campaign.get('target_amount', '0')
+        
+        message_text = (
+            f"*{title}* by {ngo_name}\n\n"
+            f"{description}\n\n"
+            f"💰 Min donation: {min_amount} AVAX\n"
+            f"🎯 Target: {target} AVAX"
+        )
+        
+        # Add donate button
+        keyboard = [[InlineKeyboardButton("💝 Donate Now", callback_data=json.dumps({"a": "donate", "c": campaign_id}))]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    except Exception as e:
+        await query.edit_message_text(f"Error loading campaign: {e}")
+
+
+async def _handle_donate_request(query, context: ContextTypes.DEFAULT_TYPE, data: dict, tg_id: str):
+    """Handle request to donate to a campaign"""
+    campaign_id = data.get("c")
+    if not campaign_id:
+        await query.edit_message_text("Invalid campaign selection.")
+        return
+    
+    try:
+        campaign = await call_django_api("get_campaign", {"campaign_id": campaign_id})
+        if not isinstance(campaign, dict):
+            await query.edit_message_text("Campaign not found.")
+            return
+        
+        # Update user state and show amount buttons
+        user_state = get_user_state(tg_id)
+        user_state['current_campaign_id'] = campaign_id
+        user_state['current_campaign'] = campaign
+        await _show_amount_buttons(query, context, campaign, user_state)
+    
+    except Exception as e:
+        await query.edit_message_text(f"Error: {e}")
+
+
+async def _handle_history_request(query, context: ContextTypes.DEFAULT_TYPE, data: dict, tg_id: str):
+    """Handle request to show user donation history"""
+    try:
+        donations = await call_django_api("get_donations", {"telegram_id": tg_id})
+        
+        if not donations or (isinstance(donations, list) and len(donations) == 0):
+            await query.edit_message_text("You haven't made any donations yet. Ready to make your first donation?")
+            return
+        
+        # Handle paginated response
+        if isinstance(donations, dict) and 'results' in donations:
+            donation_list = donations['results']
+        elif isinstance(donations, list):
+            donation_list = donations
+        else:
+            donation_list = []
+        
+        if not donation_list:
+            await query.edit_message_text("You haven't made any donations yet. Ready to make your first donation?")
+            return
+        
+        history_text = "*Your Donations:*\n\n"
+        for donation in donation_list[:5]:  # Show last 5
+            amount = donation.get('amount', '0')
+            campaign_title = donation.get('campaign_title', 'Unknown Campaign')
+            date = donation.get('created_at', '')[:10] if donation.get('created_at') else 'Unknown date'
+            history_text += f"• {amount} AVAX to '{campaign_title}' ({date})\n"
+        
+        await query.edit_message_text(history_text, parse_mode='Markdown')
+    
+    except Exception as e:
+        await query.edit_message_text(f"Error loading history: {e}")
+
+
+async def _handle_campaigns_request(query, context: ContextTypes.DEFAULT_TYPE, data: dict, tg_id: str):
+    """Handle request to show all campaigns"""
+    try:
+        # Create a mock update object for _show_campaigns
+        class MockMessage:
+            def reply_text(self, text, **kwargs):
+                return query.edit_message_text(text, **kwargs)
+        
+        class MockUpdate:
+            def __init__(self):
+                self.message = MockMessage()
+        
+        mock_update = MockUpdate()
+        await _show_campaigns(mock_update, context)
+    
+    except Exception as e:
+        await query.edit_message_text(f"Error loading campaigns: {e}")
 
 
 __all__ = ["handle_message", "handle_callback_query"]

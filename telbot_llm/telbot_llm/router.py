@@ -76,6 +76,9 @@ async def call_django_api(tool_name: str, params: dict):
         if tool_name == "show_campaign_buttons":
             # This is handled directly in handlers.py, not a backend call
             return {"action": "show_campaigns"}
+        if tool_name == "show_option_buttons":
+            # This is handled directly in handlers.py, not a backend call
+            return {"action": "show_options", "message": params.get("message", ""), "options": params.get("options", [])}
         if tool_name == "show_amount_buttons":
             # This is handled directly in handlers.py, not a backend call
             return {"action": "show_amounts", "campaign_id": params.get("campaign_id")}

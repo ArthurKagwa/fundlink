@@ -108,6 +108,32 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "show_option_buttons",
+            "description": "Show custom option buttons for user choices (e.g., Learn more, Donate, History).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Message text to show with the buttons"},
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string", "description": "Button text"},
+                                "action": {"type": "string", "description": "Action type: 'campaign_detail', 'donate', 'history', 'campaigns'"},
+                                "campaign_id": {"type": "integer", "description": "Campaign ID (if needed for action)"}
+                            },
+                            "required": ["text", "action"]
+                        }
+                    }
+                },
+                "required": ["message", "options"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "show_amount_buttons",
             "description": "Show amount selection buttons for a specific campaign.",
             "parameters": {
