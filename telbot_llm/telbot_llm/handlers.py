@@ -46,28 +46,6 @@ def clear_ephemeral_state(telegram_id: str):
             'last_used_token': last_token
         })
 
-def extract_amount_from_text(text: str) -> Decimal | None:
-    """Extract numeric amount from user text"""
-    match = re.search(r'\b(\d+\.?\d*)\b', text)
-    if match:
-        try:
-            return Decimal(match.group(1))
-        except (InvalidOperation, ValueError):
-            pass
-    return None
-
-def extract_campaign_from_text(text: str, campaigns: list) -> dict | None:
-    """Try to match campaign from text against available campaigns"""
-    text_lower = text.lower()
-    # Try partial match - check if any word from the title appears in the text
-    for campaign in campaigns:
-        title = campaign.get('title', '').lower()
-        title_words = title.split()
-        for word in title_words:
-            if len(word) > 2 and word in text_lower:  # Skip short words like "of", "the"
-                return campaign
-    return None
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -80,19 +58,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = update.message.text.strip()
     tg_id = str(update.message.from_user.id)
-    user_state = get_user_state(tg_id)
 
     # Silent one-time registration (best-effort)
     await _ensure_user_registered(tg_id, update.message.from_user.username)
 
     try:
-        # Check if this looks like a donation intent with free-text parsing
-        if await _handle_donation_intent(update, context, text, tg_id, user_state):
-            if metrics:
-                metrics.latency.observe(time.perf_counter() - started)
-            return
-
-        # Otherwise use LLM for general conversation
+        # Let LLM handle all conversation flow
         await _handle_with_llm(update, context, text, tg_id, started, metrics)
     
     except Exception as e:
@@ -122,40 +93,6 @@ async def _ensure_user_registered(tg_id: str, username: str | None):
     if len(_REGISTERED_USERS_ORDER) > 10000:
         old = _REGISTERED_USERS_ORDER.pop(0)
         _REGISTERED_USERS_CACHE.discard(old)
-
-
-async def _handle_donation_intent(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, tg_id: str, user_state: dict) -> bool:
-    """Handle donation intents with button flows. Returns True if handled."""
-    text_lower = text.lower()
-    
-    # Intent: List campaigns
-    if any(word in text_lower for word in ['campaigns', 'list', 'view campaigns', 'show campaigns']):
-        await _show_campaigns(update, context)
-        return True
-    
-    # Intent: Free-text donation like "donate 0.001 to life"
-    if 'donate' in text_lower and any(char.isdigit() for char in text):
-        amount = extract_amount_from_text(text)
-        if amount:
-            campaigns_response = await call_django_api("list_campaigns", {})
-            
-            # Handle paginated API response
-            if isinstance(campaigns_response, dict) and 'results' in campaigns_response:
-                campaigns = campaigns_response['results']
-            elif isinstance(campaigns_response, list):
-                campaigns = campaigns_response
-            else:
-                campaigns = []
-            
-            if campaigns:
-                campaign = extract_campaign_from_text(text, campaigns)
-                if campaign:
-                    return await _handle_direct_donation(update, context, campaign, amount, tg_id, user_state)
-                else:
-                    await _show_campaigns_with_message(update, context, "Which campaign did you mean?")
-                    return True
-    
-    return False
 
 
 async def _show_campaigns(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -192,141 +129,92 @@ async def _show_campaigns(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Couldn't load campaigns: {e}")
 
 
-async def _show_campaigns_with_message(update: Update, context: ContextTypes.DEFAULT_TYPE, message: str):
-    """Show campaigns with a custom message"""
-    try:
-        campaigns_response = await call_django_api("list_campaigns", {})
-        
-        # Handle paginated API response
-        if isinstance(campaigns_response, dict) and 'results' in campaigns_response:
-            campaigns = campaigns_response['results']
-        elif isinstance(campaigns_response, list):
-            campaigns = campaigns_response
-        else:
-            campaigns = []
-        
-        if not campaigns:
-            await update.message.reply_text("No live campaigns available.")
-            return
-        
-        keyboard = []
-        for campaign in campaigns[:10]:
-            title = campaign.get('title', 'Unknown')
-            ngo_name = campaign.get('ngo_name', '')
-            button_text = f"{title} — {ngo_name}"
-            # Use shorter keys to reduce callback data size
-            callback_data = json.dumps({"a": "sel", "c": campaign.get('id')})
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(message, reply_markup=reply_markup)
+async def _show_campaign_detail_with_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, user_state: dict):
+    """Show campaign detail with amount selection buttons"""
+    title = campaign.get('title', 'Campaign')
+    ngo_name = campaign.get('ngo_name', '')
+    min_amount = Decimal(str(campaign.get('min_amount', 0.0001)))
+    target = campaign.get('target_amount', 0)
+    campaign_id = campaign.get('id')
     
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-
-
-async def _handle_direct_donation(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, amount: Decimal, tg_id: str, user_state: dict) -> bool:
-    """Handle direct donation with amount and campaign already known"""
-    min_amount = Decimal(str(campaign.get('min_amount', 0)))
+    # Create amount buttons
+    keyboard = []
     
-    if amount < min_amount:
-        # Amount too low - show suggestions
-        keyboard = [
-            [InlineKeyboardButton(f"{min_amount} AVAX", callback_data=json.dumps({
-                "a": "amt", "c": campaign.get('id'), "v": str(min_amount)
-            }))],
-            [InlineKeyboardButton(f"{min_amount * 5} AVAX", callback_data=json.dumps({
-                "a": "amt", "c": campaign.get('id'), "v": str(min_amount * 5)
-            }))],
-            [InlineKeyboardButton("Custom", callback_data=json.dumps({
-                "a": "sel", "c": campaign.get('id')
-            }))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"That's below the minimum ({min_amount} AVAX). Try one of these:",
-            reply_markup=reply_markup
-        )
-        return True
+    # Suggested amounts
+    amounts = [min_amount, min_amount * 5, min_amount * 10]
+    amount_row = []
+    for amount in amounts:
+        if len(amount_row) >= 3:
+            keyboard.append(amount_row)
+            amount_row = []
+        callback_data = json.dumps({"a": "amt", "c": campaign_id, "v": str(amount)})
+        amount_row.append(InlineKeyboardButton(f"{amount} AVAX", callback_data=callback_data))
     
-    # Amount is valid - generate deep link
-    return await _generate_donation_link(update, context, campaign, amount, tg_id, user_state)
-
-
-async def _generate_donation_link(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, amount: Decimal, tg_id: str, user_state: dict) -> bool:
-    """Generate MetaMask deep link and show donation button"""
-    try:
-        # Use NGO's wallet address for donations
-        ngo = campaign.get('ngo', {})
-        wallet_address = ngo.get('wallet_address')
-        if not wallet_address:
-            await update.message.reply_text("NGO wallet missing. Please contact support.")
-            return True
-        
-        token = user_state.get('pending_token', 'AVAX')
-        decimals = 18 if token == 'AVAX' else 6
-        token_contract = None if token == 'AVAX' else "0x5425890298aed601595a70AB815c96711a31Bc65"
-        
-        result = make_metamask_deep_link(
-            address=wallet_address,
-            amount=float(amount),
-            token=token_contract,
-            decimals=decimals
-        )
-        
-        if "error" in result:
-            await update.message.reply_text(f"Couldn't generate link: {result['error']}")
-            return True
-        
-        # Create inline button with deep link and network setup
-        deep_link = result["deep_link"]
-        keyboard = [
-            [InlineKeyboardButton("🦊 Donate with MetaMask", url=deep_link)],
-            [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        campaign_title = campaign.get('title', 'Campaign')
-        message_text = (
-            f"Great! {amount} {token} to *{campaign_title}*\n\n"
-            f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
-            f"Tap to donate:"
-        )
-        await update.message.reply_text(
-            message_text,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-        # Clear ephemeral state
-        clear_ephemeral_state(tg_id)
-        return True
+    if amount_row:
+        keyboard.append(amount_row)
     
-    except Exception as e:
-        await update.message.reply_text(f"Error generating link: {e}")
-        return True
+    # Token toggle button
+    current_token = user_state.get('pending_token', 'AVAX')
+    other_token = 'USDT' if current_token == 'AVAX' else 'AVAX'
+    toggle_callback = json.dumps({"a": "tok", "c": campaign_id, "t": other_token})
+    keyboard.append([InlineKeyboardButton(f"Switch to {other_token}", callback_data=toggle_callback)])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message_text = (
+        f"*{title}* — {ngo_name}\n"
+        f"Min: {min_amount} AVAX • Target: {target} AVAX\n"
+        f"Choose an amount:"
+    )
+    
+    await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 
 async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, tg_id: str, started: float, metrics):
-    """Handle general conversation through LLM"""
+    """Handle all conversation through LLM with proper tool execution"""
     try:
         first = await chat_with_tools(text, tg_id)
+        
         if first.get("tool_call"):
             tool = first["tool_call"]
+            result = None
+            
             try:
                 if tool["name"] == "make_metamask_deep_link":
+                    # Generate deep link and show as button
                     result = make_metamask_deep_link(**tool["arguments"])
-                    # If LLM generated a deep link, show it as a button
-                    if isinstance(result, dict) and "deep_link" in result:
-                        keyboard = [[InlineKeyboardButton("🦊 Donate with MetaMask", url=result["deep_link"])]]
+                    if isinstance(result, dict) and "deep_link" in result and not result.get("error"):
+                        keyboard = [
+                            [InlineKeyboardButton("🦊 Donate with MetaMask", url=result["deep_link"])],
+                            [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
+                        ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
-                        await update.message.reply_text("Tap to donate:", reply_markup=reply_markup)
+                        
+                        # Extract donation details from tool arguments
+                        amount = tool["arguments"].get("amount", "")
+                        token_address = tool["arguments"].get("token")
+                        token_symbol = "USDT" if token_address else "AVAX"
+                        
+                        message_text = (
+                            f"Great! {amount} {token_symbol} donation ready\n\n"
+                            f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
+                            f"Tap to donate:"
+                        )
+                        await update.message.reply_text(
+                            message_text,
+                            reply_markup=reply_markup,
+                            parse_mode='Markdown'
+                        )
                         clear_ephemeral_state(tg_id)
                         return
+                        
                 elif tool["name"] == "show_campaign_buttons":
+                    # Show campaigns as inline buttons
                     await _show_campaigns(update, context)
                     return
+                    
                 elif tool["name"] == "show_amount_buttons":
+                    # Show amount selection buttons for a specific campaign
                     campaign_id = tool["arguments"].get("campaign_id")
                     if campaign_id:
                         try:
@@ -341,12 +229,24 @@ async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                             await update.message.reply_text(f"Error loading campaign: {e}")
                             return
                 else:
-                    result = await call_django_api(tool["name"], tool["arguments"])
+                    # Regular API tool call
+                    tool_args = tool["arguments"].copy()
+                    
+                    # Auto-inject telegram_id for user-specific tools
+                    if tool["name"] in ["get_donations", "register_user", "notify_donor"] and "telegram_id" not in tool_args:
+                        tool_args["telegram_id"] = tg_id
+                    
+                    result = await call_django_api(tool["name"], tool_args)
+                    
             except Exception as e:
                 raise ToolExecutionError(str(e)) from e
+            
+            # Continue conversation with tool result
             final_text = await continue_with_tool_result(first, result)
         else:
+            # Direct LLM response
             final_text = first.get("text", "(no response)")
+            
     except (LLMError, BackendAPIError, ToolExecutionError) as e:
         final_text = f"Service issue: {e}"
     except Exception:
