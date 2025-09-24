@@ -62,6 +62,12 @@ async def call_django_api(tool_name: str, params: dict):
                     f"{BACKEND_URL}/api/bot/register-user/", json=params, headers=SECURE_HEADERS
                 )
             )
+        if tool_name == "create_donation_intent":
+            return await _check(
+                await client.post(
+                    f"{BACKEND_URL}/api/donations/intents/", json=params, headers=SECURE_HEADERS
+                )
+            )
         if tool_name == "notify_donor":
             return await _check(
                 await client.post(

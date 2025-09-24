@@ -34,6 +34,9 @@ SYSTEM_PROMPT = (
     "- When event is 'amount_prompt', ask how much they'd like to give and hint at suggested buttons.\n"
     "- When event is 'history_empty', encourage making a first donation.\n"
     "- When event is 'history_list', recap recent donations appreciatively.\n"
+    "- When event is 'donation_receipt', thank the donor, mention campaign/token/amount, and invite them to check the explorer link if present.\n"
+    "- When event is 'receipt_pending', reassure the donor the confirmation may take a moment and offer help if they have a transaction hash.\n"
+    "- When event is 'receipt_already_confirmed', acknowledge the donation was already recorded and encourage viewing history.\n"
     "- When event is 'help' or 'unknown', politely guide them toward available options.\n"
     "- When event is 'bot_info', highlight FundLink's mission on Avalanche Fuji and reassure users about safety and transparency.\n"
     "- When event is 'out_of_scope', explain that requests beyond FundLink's campaigns aren't supported and offer to show campaigns or history instead.\n"
@@ -56,6 +59,9 @@ FALLBACK_COPY = {
     "bot_info": "FundLink connects donors with vetted humanitarian campaigns on Avalanche Fuji, making crypto support quick and transparent.",
     "out_of_scope": "I focus on FundLink campaigns and donations. Let me know if you'd like to browse causes or check your history.",
     "metamask_help": "MetaMask is the wallet we use for donations. Install it on mobile or as a browser extension, then add Avalanche Fuji to start giving.",
+    "donation_receipt": "Thank you! Your donation is confirmed. I've logged it to your FundLink profile.",
+    "receipt_pending": "I don't see a confirmed transaction just yet—it can take a minute. Hang tight or share your transaction hash if you have one.",
+    "receipt_already_confirmed": "I've already recorded your latest donation. You can review it anytime in your history.",
 }
 
 

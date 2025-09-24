@@ -102,3 +102,13 @@ async def test_about_bot_question(monkeypatch):
 
     assert result.intent == "HELP"
     assert result.entities.get("about_bot") is True
+
+
+@pytest.mark.asyncio
+async def test_confirm_donation_heuristic(monkeypatch):
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("i successfully donated")
+
+    assert result.intent == "CONFIRM_DONATION"
+    assert result.entities == {}

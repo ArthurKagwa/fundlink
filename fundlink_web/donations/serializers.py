@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Donation, BotUser
+from .models import Donation, DonationIntent, BotUser
 from campaigns.serializers import CampaignSerializer
 from ngos.serializers import NGOPublicSerializer
 
@@ -9,11 +9,32 @@ class DonationSerializer(serializers.ModelSerializer):
     campaign = CampaignSerializer(read_only=True)
     explorer_url = serializers.ReadOnlyField()
     is_confirmed = serializers.ReadOnlyField()
+    intent_reference = serializers.SerializerMethodField()
     
     class Meta:
         model = Donation
-        fields = ['id', 'ngo', 'campaign', 'token', 'amount_decimal', 
-                 'tx_hash', 'explorer_url', 'is_confirmed', 'confirmed_at', 'created_at']
+        fields = [
+            'id',
+            'ngo',
+            'campaign',
+            'token',
+            'amount_decimal',
+            'value_base_units',
+            'tx_hash',
+            'chain_id',
+            'sender_address',
+            'recipient_address',
+            'block_number',
+            'tx_timestamp',
+            'explorer_url',
+            'is_confirmed',
+            'confirmed_at',
+            'created_at',
+            'intent_reference',
+        ]
+
+    def get_intent_reference(self, obj):
+        return obj.intent.reference if obj.intent else None
 
 
 class DonationCreateSerializer(serializers.ModelSerializer):
@@ -21,8 +42,17 @@ class DonationCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Donation
-        fields = ['ngo', 'campaign', 'token', 'amount_decimal', 'tx_hash', 
-                 'chain_id', 'donor_telegram_id', 'confirmed_at']
+        fields = [
+            'ngo',
+            'campaign',
+            'token',
+            'amount_decimal',
+            'value_base_units',
+            'tx_hash',
+            'chain_id',
+            'donor_telegram_id',
+            'confirmed_at',
+        ]
 
 
 class BotUserSerializer(serializers.ModelSerializer):
@@ -39,5 +69,36 @@ class DonorHistorySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Donation
-        fields = ['id', 'ngo_name', 'campaign_title', 'token', 'amount_decimal', 
-                 'explorer_url', 'confirmed_at', 'created_at']
+        fields = [
+            'id',
+            'ngo_name',
+            'campaign_title',
+            'token',
+            'amount_decimal',
+            'explorer_url',
+            'confirmed_at',
+            'created_at',
+        ]
+
+
+class DonationIntentSerializer(serializers.ModelSerializer):
+    ngo = NGOPublicSerializer(read_only=True)
+    campaign = CampaignSerializer(read_only=True)
+
+    class Meta:
+        model = DonationIntent
+        fields = [
+            'id',
+            'reference',
+            'ngo',
+            'campaign',
+            'token',
+            'token_decimals',
+            'amount_decimal',
+            'value_base_units',
+            'wallet_address',
+            'donor_telegram_id',
+            'status',
+            'created_at',
+            'expires_at',
+        ]

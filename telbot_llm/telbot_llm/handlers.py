@@ -42,6 +42,9 @@ def get_user_state(telegram_id: str) -> dict:
             "last_used_token": "AVAX",
             "last_shown_campaigns": [],
             "conversation_context": "general",
+            "last_acknowledged_donation_id": None,
+            "last_confirmed_donation": None,
+            "profile": {},
         }
     return _USER_STATE[telegram_id]
 
@@ -94,9 +97,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     telegram_id = str(update.message.from_user.id)
     username = getattr(update.message.from_user, "username", None)
+    first_name = getattr(update.message.from_user, "first_name", None)
+    last_name = getattr(update.message.from_user, "last_name", None)
     user_state = get_user_state(telegram_id)
 
-    await _ensure_user_registered(telegram_id, username)
+    profile = user_state.setdefault("profile", {})
+    if username:
+        profile["username"] = username
+    if first_name:
+        profile["first_name"] = first_name
+    if last_name:
+        profile["last_name"] = last_name
+
+    await _ensure_user_registered(telegram_id, username, first_name, last_name)
 
     try:
         intent = await classify_intent(text, user_state=user_state)
@@ -144,7 +157,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Unexpected error. Please try again later.")
 
 
-async def _ensure_user_registered(telegram_id: str, username: str | None):
+async def _ensure_user_registered(
+    telegram_id: str,
+    username: str | None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+):
     if telegram_id in _REGISTERED_USERS_CACHE:
         return
 
@@ -154,12 +172,17 @@ async def _ensure_user_registered(telegram_id: str, username: str | None):
     except Exception:
         exists = False
 
-    if not exists:
+    payload = {"telegram_id": telegram_id}
+    if username:
+        payload["username"] = username
+    if first_name:
+        payload["first_name"] = first_name
+    if last_name:
+        payload["last_name"] = last_name
+
+    if not exists or len(payload) > 1:
         try:
-            await call_django_api(
-                "register_user",
-                {"telegram_id": telegram_id, "username": username or ""},
-            )
+            await call_django_api("register_user", payload)
         except Exception:
             pass
 

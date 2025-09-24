@@ -12,7 +12,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from decouple import config
-from dotenv import load_dotenv
+
+try:  # optional dependency in local dev; fall back to no-op
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover
+    def load_dotenv(*_args, **_kwargs):  # type: ignore
+        return False
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

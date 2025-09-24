@@ -1,4 +1,4 @@
 # Aggregated requirements for full FundLink stack
 -r fundlink_web/requirements.txt
 -r telbot_llm/requirements.txt
-# Add donation_verifier requirements here when defined
+-r donation_verifier/requirements.txt

@@ -64,10 +64,13 @@ async def handle_intent(
         )
 
     if intent == "DONATE":
-        return await donate_flow(user_state, entities)
+        return await donate_flow(user_state, entities, telegram_id)
 
     if intent == "HISTORY":
         return await show_history(telegram_id)
+
+    if intent == "CONFIRM_DONATION":
+        return await confirm_donation(telegram_id, user_state)
 
     if intent == "HELP":
         if entities.get("about_bot"):
@@ -178,7 +181,7 @@ async def select_campaign(
     return AgentResponse(messages=[message])
 
 
-async def donate_flow(user_state: Dict[str, Any], entities: Dict[str, Any]) -> AgentResponse:
+async def donate_flow(user_state: Dict[str, Any], entities: Dict[str, Any], telegram_id: str) -> AgentResponse:
     campaign = await _campaign_from_entities(user_state, entities)
     if not campaign:
         return await view_campaigns(user_state)
@@ -250,6 +253,26 @@ async def donate_flow(user_state: Dict[str, Any], entities: Dict[str, Any]) -> A
 
     user_state["last_used_token"] = token
 
+    profile = user_state.get("profile") or {}
+    intent_payload = {
+        "campaign_id": campaign.get("id"),
+        "token": token,
+        "amount_decimal": str(amount),
+        "value_base_units": deep_link.get("value_base_units"),
+        "donor_telegram_id": telegram_id,
+        "telegram_username": profile.get("username"),
+        "telegram_first_name": profile.get("first_name"),
+        "telegram_last_name": profile.get("last_name"),
+    }
+
+    try:
+        intent_response = await call_django_api("create_donation_intent", intent_payload)
+        if isinstance(intent_response, dict):
+            user_state["last_donation_intent_reference"] = intent_response.get("reference")
+    except BackendAPIError:
+        # Intent registration failing should not block donation flow; proceed without storing reference
+        pass
+
     campaign_title = campaign.get("title", "this campaign")
     generated = await generate_message(
         "donation_link",
@@ -302,6 +325,91 @@ async def show_history(telegram_id: str) -> AgentResponse:
         },
         None,
     )
+    return AgentResponse(messages=[AgentMessage(text=generated.text, parse_mode=generated.parse_mode)])
+
+
+async def confirm_donation(telegram_id: str, user_state: Dict[str, Any]) -> AgentResponse:
+    try:
+        donations = await call_django_api("get_donations", {"telegram_id": telegram_id})
+    except BackendAPIError as exc:
+        raise ToolExecutionError(str(exc)) from exc
+
+    donation_list: Sequence[Dict[str, Any]]
+    if isinstance(donations, dict) and "results" in donations:
+        donation_list = donations.get("results", [])
+    elif isinstance(donations, list):
+        donation_list = donations
+    else:
+        donation_list = []
+
+    latest = donation_list[0] if donation_list else None
+
+    if not latest:
+        generated = await generate_message(
+            "receipt_pending",
+            {"status": "no_records"},
+            user_state,
+        )
+        return AgentResponse(messages=[AgentMessage(text=generated.text, parse_mode=generated.parse_mode)])
+
+    donation_id = latest.get("id")
+    amount_raw = latest.get("amount_decimal") or latest.get("amount")
+    amount_decimal = _to_decimal(amount_raw)
+    amount_display = _format_amount(amount_decimal) if amount_decimal is not None else (str(amount_raw) if amount_raw is not None else "")
+    token_raw = latest.get("token")
+    if isinstance(token_raw, str) and token_raw.strip():
+        token = token_raw.strip().upper()
+    else:
+        token = "AVAX"
+
+    campaign_info = latest.get("campaign") if isinstance(latest.get("campaign"), dict) else {}
+    campaign_title = campaign_info.get("title") or latest.get("campaign_title") or ""
+
+    ngo_info = latest.get("ngo") if isinstance(latest.get("ngo"), dict) else {}
+    ngo_name = ngo_info.get("name") or campaign_info.get("ngo_name") or latest.get("ngo_name") or ""
+
+    payload = {
+        "amount": amount_display,
+        "token": token,
+        "campaign_title": campaign_title,
+        "ngo_name": ngo_name,
+        "confirmed_at": latest.get("confirmed_at") or "",
+        "explorer_url": latest.get("explorer_url") or "",
+    }
+
+    last_ack = user_state.get("last_acknowledged_donation_id")
+    if donation_id is not None and str(last_ack) == str(donation_id):
+        generated = await generate_message("receipt_already_confirmed", payload, user_state)
+        return AgentResponse(messages=[AgentMessage(text=generated.text, parse_mode=generated.parse_mode)])
+
+    profile = user_state.get("profile") or {}
+    register_payload = {"telegram_id": telegram_id}
+    for field in ("username", "first_name", "last_name"):
+        value = profile.get(field)
+        if value:
+            register_payload[field] = value
+    try:
+        if len(register_payload) > 1:
+            await call_django_api("register_user", register_payload)
+    except Exception:
+        # Profile update failing shouldn't block receipt confirmation
+        pass
+
+    if donation_id is not None:
+        user_state["last_acknowledged_donation_id"] = donation_id
+
+    user_state["last_confirmed_donation"] = {
+        "id": donation_id,
+        "amount": amount_display,
+        "token": token,
+        "campaign_title": campaign_title,
+        "ngo_name": ngo_name,
+        "explorer_url": latest.get("explorer_url"),
+        "confirmed_at": latest.get("confirmed_at"),
+    }
+    user_state["conversation_context"] = "donation_receipt"
+
+    generated = await generate_message("donation_receipt", payload, user_state)
     return AgentResponse(messages=[AgentMessage(text=generated.text, parse_mode=generated.parse_mode)])
 
 
@@ -387,7 +495,7 @@ async def handle_callback(
         campaign_id = data.get("c")
         value = data.get("v")
         entities = {"campaign_id": campaign_id, "amount": value}
-        return await donate_flow(user_state, entities)
+        return await donate_flow(user_state, entities, telegram_id)
 
     if action == "tok":
         campaign_id = data.get("c")
@@ -445,7 +553,7 @@ async def handle_callback(
 
     if action == "donate":
         campaign_id = data.get("c")
-        return await donate_flow(user_state, {"campaign_id": campaign_id})
+        return await donate_flow(user_state, {"campaign_id": campaign_id}, telegram_id)
 
     if action == "history":
         return await show_history(telegram_id)
@@ -608,6 +716,7 @@ __all__ = [
     "select_campaign",
     "donate_flow",
     "show_history",
+    "confirm_donation",
     "help_menu",
     "unknown_menu",
     "bot_info",

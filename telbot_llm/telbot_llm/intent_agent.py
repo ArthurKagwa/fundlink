@@ -17,6 +17,7 @@ VALID_INTENTS = {
     "DONATE",
     "HISTORY",
     "HELP",
+    "CONFIRM_DONATION",
     "UNKNOWN",
 }
 
@@ -30,7 +31,7 @@ INTENT_SYSTEM_PROMPT = (
     "Rules:\n"
     "- Respond with STRICT JSON only (no prose).\n"
     "- Schema: {\"intent\": str, \"entities\": object, \"confidence\": float}.\n"
-    "- Valid intents: VIEW_CAMPAIGNS, SELECT_CAMPAIGN, DONATE, HISTORY, HELP, UNKNOWN.\n"
+    "- Valid intents: VIEW_CAMPAIGNS, SELECT_CAMPAIGN, DONATE, HISTORY, HELP, CONFIRM_DONATION, UNKNOWN.\n"
     "- Entities may include campaign_id (int), campaign_title (str), amount (float), token ('AVAX'|'USDT').\n"
     "- Use token uppercase. If token unspecified, omit it.\n"
     "- Confidence must be 0.0–1.0. If unsure < 0.6, return intent UNKNOWN with empty entities.\n"
@@ -88,6 +89,17 @@ FEW_SHOTS = [
                 "intent": "HISTORY",
                 "entities": {},
                 "confidence": 0.88,
+            }
+        ),
+    },
+    {"role": "user", "content": "i successfully donated"},
+    {
+        "role": "assistant",
+        "content": json.dumps(
+            {
+                "intent": "CONFIRM_DONATION",
+                "entities": {},
+                "confidence": 0.9,
             }
         ),
     },
@@ -300,6 +312,46 @@ async def classify_intent(
                     confidence=0.85,
                     raw={"intent": "DONATE", "entities": {"campaign_id": campaign_id}, "heuristic": "affirmative"},
                 )
+
+    confirm_phrases = [
+        "i donated",
+        "i have donated",
+        "i've donated",
+        "i successfully donated",
+        "donation complete",
+        "donation is complete",
+        "donation finished",
+        "donation is done",
+        "i finished my donation",
+        "i completed the donation",
+        "donation went through",
+    ]
+    confirmation_keywords = {
+        "confirm",
+        "confirmed",
+        "confirmation",
+        "receipt",
+        "success",
+        "successful",
+        "successfully",
+        "done",
+        "complete",
+        "completed",
+        "finished",
+        "received",
+    }
+
+    donation_mentioned = "donation" in lowered or "donated" in lowered or "donat" in lowered
+    confirm_keyword_present = any(word in lowered for word in confirmation_keywords)
+    confirm_phrase_present = any(phrase in lowered for phrase in confirm_phrases)
+
+    if donation_mentioned and (confirm_keyword_present or confirm_phrase_present):
+        return IntentPrediction(
+            intent="CONFIRM_DONATION",
+            entities={},
+            confidence=0.9,
+            raw={"intent": "CONFIRM_DONATION", "entities": {}, "heuristic": "confirm_donation"},
+        )
 
     messages = [{"role": "system", "content": INTENT_SYSTEM_PROMPT}]
 
