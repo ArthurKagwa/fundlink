@@ -27,7 +27,9 @@ def get_user_state(telegram_id: str) -> dict:
             'pending_amount': None,
             'pending_token': 'AVAX',
             'pending_decimals': 18,
-            'last_used_token': 'AVAX'
+            'last_used_token': 'AVAX',
+            'last_shown_campaigns': [],  # Track recently shown campaigns
+            'conversation_context': 'general'  # Track conversation context
         }
     return _USER_STATE[telegram_id]
 
@@ -198,7 +200,20 @@ async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     """Handle all conversation through LLM with proper tool execution"""
     try:
         print(f"DEBUG - Processing message: {text}")
-        first = await chat_with_tools(text, tg_id)
+        
+        # Get user state for context
+        user_state = get_user_state(tg_id)
+        
+        # Add context to user message if relevant
+        contextual_text = text
+        if user_state.get('last_shown_campaigns') and text.upper() in ['WHAT IS IT ABOUT', 'TELL ME MORE', 'DETAILS', 'THE CAMPAIGN', 'THE CAMPAIGN!!!']:
+            # User is asking about campaign details after seeing campaigns
+            campaign_ids = user_state['last_shown_campaigns']
+            if campaign_ids:
+                contextual_text = f"{text} (User is asking about campaign ID {campaign_ids[0]} that was just shown to them)"
+                user_state['conversation_context'] = 'campaign_inquiry'
+        
+        first = await chat_with_tools(contextual_text, tg_id)
         print(f"DEBUG - LLM response: {first}")
         
         # Check if we have multiple tool calls in the first response
@@ -245,6 +260,13 @@ async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 
                 result = await call_django_api(tool["name"], tool_args)
                 print(f"DEBUG - Tool {tool['name']} result: {result}")
+                
+                # Update conversation context based on tool results
+                if tool["name"] == "list_campaigns" and isinstance(result, dict):
+                    campaigns = result.get('results', [])
+                    if campaigns:
+                        user_state['last_shown_campaigns'] = [c.get('id') for c in campaigns if c.get('id')]
+                        user_state['conversation_context'] = 'campaigns_shown'
                 
                 # Continue conversation with tool result
                 response = await continue_with_tool_result(response, result)
@@ -336,6 +358,12 @@ async def _execute_tool_call(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 except Exception as e:
                     await update.message.reply_text(f"Error loading campaign: {e}")
                     return False
+        
+        elif tool["name"] == "get_campaign":
+            # This is an API tool that should be handled by the caller to get campaign details
+            # The LLM will use the result to provide detailed campaign information
+            return True
+            
         else:
             # This is an API tool call - should be handled by the caller
             return True
