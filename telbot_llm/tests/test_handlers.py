@@ -1,71 +1,116 @@
-from unittest import AsyncTestCase
-from unittest.mock import patch, AsyncMock
-from telegram import Update
-from telegram.ext import ContextTypes
-from telbot_llm.handlers import handle_message
+import json
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-class TestHandlers(AsyncTestCase):
+import pytest
 
-    @patch('telbot_llm.handlers.call_django_api', new_callable=AsyncMock)
-    @patch('telbot_llm.handlers.chat_with_tools', new_callable=AsyncMock)
-    async def test_handle_message_tool_call(self, mock_chat_with_tools, mock_call_django_api):
-        # Arrange
-        update = Update(update_id=1, message=type('Message', (object,), {'text': 'I want to donate', 'from_user': type('User', (object,), {'id': 12345})}))
-        context = ContextTypes.DEFAULT_TYPE()
+from telbot_llm.handlers import get_user_state, handle_callback_query, handle_message
+from telbot_llm.intent_agent import IntentPrediction
+from telbot_llm.response_agent import AgentMessage, AgentResponse
 
-        mock_chat_with_tools.return_value = {
-            "tool_call": {
-                "name": "list_campaigns",
-                "arguments": {}
-            }
-        }
-        mock_call_django_api.return_value = {"campaigns": ["Campaign 1", "Campaign 2"]}
 
-        # Act
-        await handle_message(update, context)
+def _dummy_update(message):
+    return SimpleNamespace(message=message)
 
-        # Assert
-        mock_chat_with_tools.assert_called_once_with('I want to donate', '12345')
-        mock_call_django_api.assert_called_once_with("list_campaigns", {})
 
-    @patch('telbot_llm.handlers.call_django_api', new_callable=AsyncMock)
-    @patch('telbot_llm.handlers.chat_with_tools', new_callable=AsyncMock)
-    async def test_handle_message_text_response(self, mock_chat_with_tools, mock_call_django_api):
-        # Arrange
-        update = Update(update_id=1, message=type('Message', (object,), {'text': 'Tell me about donations', 'from_user': type('User', (object,), {'id': 12345})}))
-        context = ContextTypes.DEFAULT_TYPE()
+def _dummy_context():
+    return SimpleNamespace()
 
-        mock_chat_with_tools.return_value = {
-            "text": "Here is some information about donations."
-        }
 
-        # Act
-        await handle_message(update, context)
+@pytest.mark.asyncio
+async def test_handle_message_dispatches_agent(monkeypatch):
+    telegram_id = 999
+    message = SimpleNamespace(
+        text="campaigns",
+        from_user=SimpleNamespace(id=telegram_id, username="tester"),
+        reply_text=AsyncMock(),
+    )
 
-        # Assert
-        mock_chat_with_tools.assert_called_once_with('Tell me about donations', '12345')
-        mock_call_django_api.assert_not_called()  # No tool call should be made
+    monkeypatch.setattr("telbot_llm.handlers._USER_STATE", {})
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_CACHE", set())
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_ORDER", [])
+    monkeypatch.setattr("telbot_llm.handlers.call_django_api", AsyncMock(return_value={"exists": True}))
 
-    @patch('telbot_llm.handlers.call_django_api', new_callable=AsyncMock)
-    @patch('telbot_llm.handlers.chat_with_tools', new_callable=AsyncMock)
-    async def test_handle_message_register_user(self, mock_chat_with_tools, mock_call_django_api):
-        # Arrange
-        update = Update(update_id=1, message=type('Message', (object,), {'text': 'I want to register', 'from_user': type('User', (object,), {'id': 12345, 'username': 'test_user'})}))
-        context = ContextTypes.DEFAULT_TYPE()
+    intent_prediction = IntentPrediction("VIEW_CAMPAIGNS", {}, 0.9, {})
+    agent_response = AgentResponse(messages=[AgentMessage(text="Hi")])
 
-        mock_chat_with_tools.return_value = {
-            "tool_call": {
-                "name": "register_user",
-                "arguments": {
-                    "telegram_id": "12345",
-                    "username": "test_user"
-                }
-            }
-        }
-        mock_call_django_api.return_value = {"success": True}
+    with patch("telbot_llm.handlers.classify_intent", new=AsyncMock(return_value=intent_prediction)) as mock_classify:
+        with patch(
+            "telbot_llm.handlers.response_handle_intent",
+            new=AsyncMock(return_value=agent_response),
+        ) as mock_response:
+            await handle_message(_dummy_update(message), _dummy_context())
 
-        # Act
-        await handle_message(update, context)
+    mock_classify.assert_awaited()
+    mock_response.assert_awaited()
+    assert message.reply_text.await_count == 1
 
-        # Assert
-        mock_call_django_api.assert_called_once_with("register_user", {"telegram_id": "12345", "username": "test_user"})
+
+@pytest.mark.asyncio
+async def test_handle_message_clears_state(monkeypatch):
+    telegram_id = 321
+    state = {
+        "current_campaign_id": 12,
+        "current_campaign": {"id": 12},
+        "pending_amount": Decimal("0.1"),
+        "pending_token": "USDT",
+        "pending_decimals": 6,
+        "last_used_token": "USDT",
+        "last_shown_campaigns": [],
+        "conversation_context": "donate",
+    }
+    message = SimpleNamespace(
+        text="donate",
+        from_user=SimpleNamespace(id=telegram_id, username="tester"),
+        reply_text=AsyncMock(),
+    )
+
+    monkeypatch.setattr("telbot_llm.handlers._USER_STATE", {str(telegram_id): state})
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_CACHE", set())
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_ORDER", [])
+    monkeypatch.setattr("telbot_llm.handlers.call_django_api", AsyncMock(return_value={"exists": True}))
+
+    intent_prediction = IntentPrediction("DONATE", {"amount": 0.2}, 0.9, {})
+    agent_response = AgentResponse(messages=[AgentMessage(text="Done")], clear_state=True)
+
+    with patch("telbot_llm.handlers.classify_intent", new=AsyncMock(return_value=intent_prediction)):
+        with patch(
+            "telbot_llm.handlers.response_handle_intent",
+            new=AsyncMock(return_value=agent_response),
+        ):
+            await handle_message(_dummy_update(message), _dummy_context())
+
+    cleared = get_user_state(str(telegram_id))
+    assert cleared["current_campaign_id"] is None
+    assert cleared["current_campaign"] is None
+    assert cleared["pending_amount"] is None
+    assert cleared["pending_token"] == "USDT"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_routes_to_agent(monkeypatch):
+    telegram_id = 555
+    query = SimpleNamespace(
+        data=json.dumps({"a": "history"}),
+        from_user=SimpleNamespace(id=telegram_id),
+        message=SimpleNamespace(reply_text=AsyncMock()),
+        edit_message_text=AsyncMock(),
+        answer=AsyncMock(),
+    )
+
+    monkeypatch.setattr("telbot_llm.handlers._USER_STATE", {})
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_CACHE", set())
+    monkeypatch.setattr("telbot_llm.handlers._REGISTERED_USERS_ORDER", [])
+
+    agent_response = AgentResponse(messages=[AgentMessage(text="History")])
+
+    with patch(
+        "telbot_llm.handlers.response_handle_callback",
+        new=AsyncMock(return_value=agent_response),
+    ) as mock_callback:
+        await handle_callback_query(SimpleNamespace(callback_query=query), _dummy_context())
+
+    mock_callback.assert_awaited()
+    query.edit_message_text.assert_awaited()
+

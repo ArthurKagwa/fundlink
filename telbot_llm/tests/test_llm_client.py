@@ -1,46 +1,50 @@
-import pytest
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
+
 from telbot_llm import llm_client
 
 
 @pytest.mark.asyncio
-async def test_chat_with_tools_tool_call(monkeypatch):
-    class FakeOut:
-        def __init__(self):
-            self.tool_calls = [type("TC", (), {"function": type("F", (), {"name": "list_campaigns", "arguments": "{}"})()})]
-            self.content = [{"text": "Here are campaigns"}]
-    class FakeResp:
-        output = [FakeOut()]
-    class FakeClient:
-        class responses:  # noqa: N801
-            @staticmethod
-            def create(**kwargs):
-                return FakeResp()
-    monkeypatch.setattr(llm_client, "Together", object())  # bypass import guard
-    monkeypatch.setattr(llm_client, "API_KEY", "test")
-    monkeypatch.setattr(llm_client, "_client", lambda: FakeClient())
+async def test_complete_returns_text(monkeypatch):
+    message = SimpleNamespace(content="{\"intent\": \"VIEW_CAMPAIGNS\"}")
+    response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
-    res = await llm_client.chat_with_tools("hi", "123")
-    assert res["tool_call"]["name"] == "list_campaigns"
+    class FakeChat:
+        def __init__(self):
+            self.completions = SimpleNamespace(create=lambda **_: response)
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(llm_client, "Together", object())
+    monkeypatch.setattr(llm_client, "API_KEY", "test-key")
+
+    with patch("telbot_llm.llm_client._client", return_value=FakeClient()):
+        out = await llm_client.complete([
+            {"role": "user", "content": "hi"}
+        ])
+
+    assert out == message.content
 
 
 @pytest.mark.asyncio
-async def test_continue_with_tool_result(monkeypatch):
-    class FakeOut:
-        def __init__(self):
-            self.tool_calls = []
-            self.content = [{"text": "Done"}]
-    class FakeResp:
-        output = [FakeOut()]
-    class FakeClient:
-        class responses:  # noqa: N801
-            @staticmethod
-            def create(**kwargs):
-                return FakeResp()
-    monkeypatch.setattr(llm_client, "Together", object())
-    monkeypatch.setattr(llm_client, "API_KEY", "test")
-    monkeypatch.setattr(llm_client, "_client", lambda: FakeClient())
+async def test_complete_raises_when_empty(monkeypatch):
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=""))])
 
-    state = {"messages": [{"role": "user", "content": "hi"}], "model": "X"}
-    txt = await llm_client.continue_with_tool_result(state, {"ok": True})
-    assert txt == "Done"
+    class FakeChat:
+        def __init__(self):
+            self.completions = SimpleNamespace(create=lambda **_: response)
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(llm_client, "Together", object())
+    monkeypatch.setattr(llm_client, "API_KEY", "test-key")
+
+    with patch("telbot_llm.llm_client._client", return_value=FakeClient()):
+        with pytest.raises(llm_client.LLMError):
+            await llm_client.complete([{"role": "user", "content": "hi"}])
