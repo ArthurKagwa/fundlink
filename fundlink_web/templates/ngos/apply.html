@@ -67,6 +67,18 @@
     <input id="wallet_address" type="text" name="wallet_address" value="{{ form_data.wallet_address|default:'' }}" placeholder="0x..." required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
         <p class="text-muted" style="font-size: 0.9rem; margin-top: 0.5rem;">This address will receive donations on Avalanche Fuji testnet</p>
     </div>
+
+    <h3>Account Security (Optional)</h3>
+    <div style="margin-bottom: 1rem;">
+        <label>Password</label>
+        <input id="password" type="password" name="password" minlength="8" placeholder="Create a password to manage your NGO" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+        <div class="invalid-feedback"></div>
+    </div>
+    <div style="margin-bottom: 1rem;">
+        <label>Confirm Password</label>
+        <input id="password_confirm" type="password" name="password_confirm" minlength="8" placeholder="Re-enter password" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem;">
+        <div class="invalid-feedback"></div>
+    </div>
     
     <div style="margin-bottom: 1rem;">
         <label>

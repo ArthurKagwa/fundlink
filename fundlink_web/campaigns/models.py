@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 from ngos.models import NGO
 
 
@@ -12,7 +13,22 @@ class Campaign(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     active = models.BooleanField(default=False)
-    published = models.BooleanField(default=False)  # Admin approval required
+    published = models.BooleanField(default=False)  # Legacy booleans kept for compatibility
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_campaigns')
+    rejection_reason = models.TextField(blank=True)
     token_options = models.JSONField(default=list, help_text="List of accepted tokens: ['AVAX', 'USDT']")
     min_amount = models.DecimalField(max_digits=20, decimal_places=6, default=0.01, help_text="Minimum donation amount")
     target_amount = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True, help_text="Optional funding target")
@@ -27,13 +43,39 @@ class Campaign(models.Model):
     
     @property
     def is_live(self):
-        return self.active and self.published and self.ngo.approved
+        # Derive from status + NGO
+        return self.status == self.STATUS_APPROVED and self.ngo.approved
     
     @property
     def total_donations(self):
         return self.donations.filter(confirmed_at__isnull=False).aggregate(
             total=models.Sum('amount_decimal')
         )['total'] or 0
+
+    # Moderation helpers
+    def submit_for_review(self):
+        if self.status != self.STATUS_DRAFT and self.status != self.STATUS_REJECTED:
+            return
+        self.status = self.STATUS_SUBMITTED
+        self.submitted_at = timezone.now()
+        self.save()
+
+    def approve(self, reviewer):
+        self.status = self.STATUS_APPROVED
+        self.published = True
+        self.active = True
+        self.approved_at = timezone.now()
+        self.reviewed_by = reviewer
+        self.rejection_reason = ''
+        self.save()
+
+    def reject(self, reviewer, reason: str):
+        self.status = self.STATUS_REJECTED
+        self.published = False
+        self.active = False
+        self.reviewed_by = reviewer
+        self.rejection_reason = reason
+        self.save()
 
 
 class ImpactPost(models.Model):

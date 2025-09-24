@@ -73,6 +73,12 @@ async def call_django_api(tool_name: str, params: dict):
             return await _check(
                 await client.post(f"{BACKEND_URL}/api/ngos/apply/", json=params, headers=SECURE_HEADERS)
             )
+        if tool_name == "show_campaign_buttons":
+            # This is handled directly in handlers.py, not a backend call
+            return {"action": "show_campaigns"}
+        if tool_name == "show_amount_buttons":
+            # This is handled directly in handlers.py, not a backend call
+            return {"action": "show_amounts", "campaign_id": params.get("campaign_id")}
         return {"error": f"Unknown tool {tool_name}"}
 
 

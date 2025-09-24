@@ -13,6 +13,9 @@
         .logo { font-size: 1.5rem; font-weight: bold; text-decoration: none; color: white; }
         nav a { color: white; text-decoration: none; margin-left: 1rem; }
         nav a:hover { text-decoration: underline; }
+    .link-button { background: none; border: none; color: inherit; font: inherit; text-decoration: none; cursor: pointer; padding: 0; }
+    nav .link-button { color: white; margin-left: 1rem; }
+    nav .link-button:hover { text-decoration: underline; }
         main { min-height: 80vh; padding: 2rem 0; }
         .btn { display: inline-block; padding: 0.75rem 1.5rem; background: #000; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; }
         .btn:hover { background: #333; }
@@ -39,9 +42,14 @@
             <a href="{% url 'main:home' %}" class="logo">FundLink</a>
             <nav>
                 <a href="{% url 'main:campaigns_list' %}">Campaigns</a>
+                {% load ngo_tags %}
                 {% if user.is_authenticated %}
-                    {% if user.is_staff %}<a href="/admin/">Admin</a>{% endif %}
-                    <a href="{% url 'logout' %}">Logout</a>
+                    {% if user|has_ngo %}<a href="{% url 'main:ngo_dashboard' %}">Dashboard</a>{% endif %}
+                    {% if user.is_staff %}<a href="/admin/">Admin</a><a href="{% url 'main:staff_campaign_review' %}">Review</a>{% endif %}
+                    <form method="post" action="{% url 'logout' %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="link-button">Logout</button>
+                    </form>
                 {% else %}
                     <a href="{% url 'main:ngo_apply' %}">Register NGO</a>
                     <a href="{% url 'login' %}">Login</a>
@@ -62,5 +70,9 @@
     </main>
     
     {% block extra_scripts %}{% endblock %}
+    <script>
+        // Expose debug flag for enhanced front-end diagnostics
+        window.FUNDLINK_DEBUG = (function(){ return "{% if debug %}true{% else %}false{% endif %}" === 'true'; })();
+    </script>
 </body>
 </html>

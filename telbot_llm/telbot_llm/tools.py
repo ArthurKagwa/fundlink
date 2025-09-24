@@ -100,8 +100,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "show_campaign_buttons",
+            "description": "Show interactive campaign selection buttons to user.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_amount_buttons",
+            "description": "Show amount selection buttons for a specific campaign.",
+            "parameters": {
+                "type": "object",
+                "properties": {"campaign_id": {"type": "integer"}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "make_metamask_deep_link",
-            "description": "Create a MetaMask deep link for sending AVAX or an ERC20 token on Avalanche Fuji.",
+            "description": "Create a MetaMask deep link for sending AVAX or an ERC20 token on Avalanche Fuji. Only use when user has specified both campaign and amount.",
             "parameters": {
                 "type": "object",
                 "properties": {

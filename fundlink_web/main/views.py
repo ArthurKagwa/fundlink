@@ -4,11 +4,14 @@ from django.views.generic import TemplateView
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
 from campaigns.models import Campaign
 from ngos.models import NGO
 from ngos.serializers import NGOApplicationSerializer
 from donations.models import Donation
 from django.db.models import Count, Sum
+from django.contrib.auth.decorators import user_passes_test
 
 
 class HomeView(TemplateView):
@@ -178,3 +181,53 @@ def register_view(request):
         form = UserCreationForm()
     
     return render(request, 'registration/register.html', {'form': form})
+
+
+class NGODashboardView(TemplateView):
+    template_name = 'ngos/dashboard.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        if not hasattr(request.user, 'ngo'):
+            messages.info(request, 'No NGO profile associated with this user.')
+            return redirect('main:home')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        ngo = self.request.user.ngo
+        context['ngo'] = ngo
+        context['campaigns'] = ngo.campaigns.all().order_by('-created_at')[:25]
+        context['pending_campaigns'] = ngo.campaigns.filter(status__in=['submitted'])
+        context['rejected_campaigns'] = ngo.campaigns.filter(status='rejected')
+        return context
+
+
+@method_decorator(login_required, name='dispatch')
+class UserProfileView(TemplateView):
+    template_name = 'registration/profile.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        context['user_obj'] = user
+        # If user has an NGO profile, include quick stats
+        ngo = getattr(user, 'ngo', None)
+        if ngo:
+            context['ngo'] = ngo
+            context['campaign_count'] = ngo.campaigns.count()
+            context['approved_campaigns'] = ngo.campaigns.filter(active=True).count()
+        return context
+
+
+@method_decorator(user_passes_test(lambda u: u.is_authenticated and u.is_staff, login_url='login'), name='dispatch')
+class StaffCampaignReviewView(TemplateView):
+    template_name = 'campaigns/review.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Review Submitted Campaigns'
+        context['pending_campaigns'] = Campaign.objects.select_related('ngo').filter(status=Campaign.STATUS_SUBMITTED)
+        context['recent_rejected'] = Campaign.objects.select_related('ngo').filter(status=Campaign.STATUS_REJECTED).order_by('-updated_at')[:10]
+        return context

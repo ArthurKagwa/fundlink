@@ -149,6 +149,7 @@ class APIService {
         this.defaultHeaders = {
             'Content-Type': 'application/json',
         };
+        this.debug = (window.FUNDLINK_DEBUG === true) || (localStorage.getItem('fundlink_debug') === '1');
     }
 
     /**
@@ -160,28 +161,80 @@ class APIService {
             headers: { ...this.defaultHeaders, ...options.headers },
             ...options
         };
-
-        // Add CSRF token for non-GET requests
-        if (options.method && options.method !== 'GET') {
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-            if (csrfToken) {
-                config.headers['X-CSRFToken'] = csrfToken;
-            }
-        }
-
+        const started = performance.now ? performance.now() : Date.now();
         try {
             const response = await fetch(url, config);
-            
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `HTTP ${response.status}`);
-            }
+            const durationMs = (performance.now ? performance.now() : Date.now()) - started;
 
-            return await response.json();
+            if (!response.ok) {
+                let parsed = null;
+                let textBody = '';
+                try { parsed = await response.json(); } catch (e) {
+                    try { textBody = await response.text(); } catch (_) { textBody = ''; }
+                }
+                const correlationId = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `cid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+                const message = this._deriveErrorMessage(parsed, response.status) || `HTTP ${response.status}`;
+                const apiError = new Error(message);
+                apiError.name = 'APIError';
+                apiError.status = response.status;
+                apiError.data = parsed;
+                apiError.rawBody = textBody;
+                apiError.endpoint = endpoint;
+                apiError.method = config.method || 'GET';
+                apiError.durationMs = Math.round(durationMs);
+                apiError.correlationId = correlationId;
+                if (this.debug || response.status >= 400) {
+                    if (console.groupCollapsed) {
+                        console.groupCollapsed(`[API ERROR] ${apiError.method} ${url} ${response.status} (${apiError.correlationId})`);
+                        console.error('Message:', message);
+                        console.error('Status:', response.status);
+                        console.error('Endpoint:', endpoint);
+                        console.error('Duration(ms):', apiError.durationMs);
+                        console.error('Data:', parsed);
+                        if (textBody && !parsed) console.error('Raw Body:', textBody);
+                        console.error('Request Headers:', config.headers);
+                        if (config.body) console.error('Request Body:', this._safeJsonParse(config.body));
+                        console.groupEnd();
+                    } else {
+                        console.error('[API ERROR]', apiError);
+                    }
+                }
+                window.dispatchEvent(new CustomEvent('fundlink:apiError', { detail: apiError }));
+                throw apiError;
+            }
+            const json = await response.json();
+            return json;
         } catch (error) {
-            console.error('API Request failed:', error);
+            if (!(error instanceof Error)) {
+                const wrap = new Error('Unknown network error');
+                wrap.original = error;
+                error = wrap;
+            }
+            if (this.debug) console.error('API Request failed (network/runtime):', { endpoint, error });
+            window.dispatchEvent(new CustomEvent('fundlink:apiNetworkError', { detail: error }));
             throw error;
         }
+    }
+
+    _safeJsonParse(body) {
+        try { return JSON.parse(body); } catch (_) { return body; }
+    }
+
+    _deriveErrorMessage(data, status) {
+        if (!data) return '';
+        if (typeof data === 'string') return data;
+        if (data.message) return data.message;
+        if (data.detail) return data.detail;
+        const keys = Object.keys(data);
+        if (!keys.length) return '';
+        const parts = [];
+        for (const k of keys.slice(0, 4)) {
+            const v = data[k];
+            if (Array.isArray(v)) parts.push(`${k}: ${v[0]}`);
+            else if (typeof v === 'string') parts.push(`${k}: ${v}`);
+        }
+        if (keys.length > 4) parts.push('...');
+        return parts.join(' | ') || `HTTP ${status}`;
     }
 
     /**
@@ -512,3 +565,15 @@ class FormValidator {
 
 // Make FormValidator available globally
 window.FormValidator = FormValidator;
+
+// Global API error listeners for user feedback & lightweight diagnostics
+window.addEventListener('fundlink:apiError', (e) => {
+    const err = e.detail || {};
+    const msg = err.message || 'Request failed';
+    const suffix = err.correlationId ? ` (#${err.correlationId.slice(0,8)})` : '';
+    FundLinkUtils.showToast(`${msg}${suffix}`, 'error', 5000);
+});
+
+window.addEventListener('fundlink:apiNetworkError', (e) => {
+    FundLinkUtils.showToast('Network error - please retry', 'error', 4000);
+});

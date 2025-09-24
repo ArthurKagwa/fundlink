@@ -35,19 +35,17 @@ def clear_ephemeral_state(telegram_id: str):
     """Clear ephemeral state after successful donation link generation"""
     if telegram_id in _USER_STATE:
         state = _USER_STATE[telegram_id]
-        # Save the last used token before clearing
-        last_token = state.get('pending_token', state.get('last_used_token', 'AVAX'))
         state.update({
             'current_campaign_id': None,
             'current_campaign': None,
             'pending_amount': None,
-            'pending_token': last_token,
-            'pending_decimals': 18 if last_token == 'AVAX' else 6,
-            'last_used_token': last_token
+            'pending_token': state.get('last_used_token', 'AVAX'),
+            'pending_decimals': 18 if state.get('last_used_token', 'AVAX') == 'AVAX' else 6
         })
 
 def extract_amount_from_text(text: str) -> Decimal | None:
     """Extract numeric amount from user text"""
+    # Look for patterns like "0.001", "0.5", "1.5", etc.
     match = re.search(r'\b(\d+\.?\d*)\b', text)
     if match:
         try:
@@ -59,13 +57,10 @@ def extract_amount_from_text(text: str) -> Decimal | None:
 def extract_campaign_from_text(text: str, campaigns: list) -> dict | None:
     """Try to match campaign from text against available campaigns"""
     text_lower = text.lower()
-    # Try partial match - check if any word from the title appears in the text
+    # Try exact match on title
     for campaign in campaigns:
-        title = campaign.get('title', '').lower()
-        title_words = title.split()
-        for word in title_words:
-            if len(word) > 2 and word in text_lower:  # Skip short words like "of", "the"
-                return campaign
+        if campaign.get('title', '').lower() in text_lower:
+            return campaign
     return None
 
 
@@ -83,7 +78,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state = get_user_state(tg_id)
 
     # Silent one-time registration (best-effort)
-    await _ensure_user_registered(tg_id, update.message.from_user.username)
+    global _REGISTERED_USERS_CACHE, _REGISTERED_USERS_ORDER
+    if tg_id not in _REGISTERED_USERS_CACHE:
+        await _ensure_user_registered(tg_id, update.message.from_user.username)
 
     try:
         # Check if this looks like a donation intent with free-text parsing
@@ -137,17 +134,8 @@ async def _handle_donation_intent(update: Update, context: ContextTypes.DEFAULT_
     if 'donate' in text_lower and any(char.isdigit() for char in text):
         amount = extract_amount_from_text(text)
         if amount:
-            campaigns_response = await call_django_api("list_campaigns", {})
-            
-            # Handle paginated API response
-            if isinstance(campaigns_response, dict) and 'results' in campaigns_response:
-                campaigns = campaigns_response['results']
-            elif isinstance(campaigns_response, list):
-                campaigns = campaigns_response
-            else:
-                campaigns = []
-            
-            if campaigns:
+            campaigns = await call_django_api("list_campaigns", {})
+            if isinstance(campaigns, list) and campaigns:
                 campaign = extract_campaign_from_text(text, campaigns)
                 if campaign:
                     return await _handle_direct_donation(update, context, campaign, amount, tg_id, user_state)
@@ -161,28 +149,19 @@ async def _handle_donation_intent(update: Update, context: ContextTypes.DEFAULT_
 async def _show_campaigns(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show available campaigns with buttons"""
     try:
-        campaigns_response = await call_django_api("list_campaigns", {})
-        
-        # Handle paginated API response
-        if isinstance(campaigns_response, dict) and 'results' in campaigns_response:
-            campaigns = campaigns_response['results']
-        elif isinstance(campaigns_response, list):
-            campaigns = campaigns_response
-        else:
-            campaigns = []
-        
-        if not campaigns:
+        campaigns = await call_django_api("list_campaigns", {})
+        if not isinstance(campaigns, list) or not campaigns:
             await update.message.reply_text("No live campaigns yet.")
             return
         
+        # Create inline keyboard with campaign buttons
         keyboard = []
         for campaign in campaigns[:10]:  # Limit to 10 campaigns
             title = campaign.get('title', 'Unknown')
             ngo_name = campaign.get('ngo_name', '')
             min_amount = campaign.get('min_amount', 0)
             button_text = f"{title} — {ngo_name} (min {min_amount} AVAX)"
-            # Use shorter keys to reduce callback data size
-            callback_data = json.dumps({"a": "sel", "c": campaign.get('id')})
+            callback_data = json.dumps({"action": "select_campaign", "campaign_id": campaign.get('id')})
             keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -195,17 +174,8 @@ async def _show_campaigns(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _show_campaigns_with_message(update: Update, context: ContextTypes.DEFAULT_TYPE, message: str):
     """Show campaigns with a custom message"""
     try:
-        campaigns_response = await call_django_api("list_campaigns", {})
-        
-        # Handle paginated API response
-        if isinstance(campaigns_response, dict) and 'results' in campaigns_response:
-            campaigns = campaigns_response['results']
-        elif isinstance(campaigns_response, list):
-            campaigns = campaigns_response
-        else:
-            campaigns = []
-        
-        if not campaigns:
+        campaigns = await call_django_api("list_campaigns", {})
+        if not isinstance(campaigns, list) or not campaigns:
             await update.message.reply_text("No live campaigns available.")
             return
         
@@ -214,8 +184,7 @@ async def _show_campaigns_with_message(update: Update, context: ContextTypes.DEF
             title = campaign.get('title', 'Unknown')
             ngo_name = campaign.get('ngo_name', '')
             button_text = f"{title} — {ngo_name}"
-            # Use shorter keys to reduce callback data size
-            callback_data = json.dumps({"a": "sel", "c": campaign.get('id')})
+            callback_data = json.dumps({"action": "select_campaign", "campaign_id": campaign.get('id')})
             keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -233,13 +202,13 @@ async def _handle_direct_donation(update: Update, context: ContextTypes.DEFAULT_
         # Amount too low - show suggestions
         keyboard = [
             [InlineKeyboardButton(f"{min_amount} AVAX", callback_data=json.dumps({
-                "a": "amt", "c": campaign.get('id'), "v": str(min_amount)
+                "action": "donate_amount", "campaign_id": campaign.get('id'), "amount": str(min_amount)
             }))],
             [InlineKeyboardButton(f"{min_amount * 5} AVAX", callback_data=json.dumps({
-                "a": "amt", "c": campaign.get('id'), "v": str(min_amount * 5)
+                "action": "donate_amount", "campaign_id": campaign.get('id'), "amount": str(min_amount * 5)
             }))],
             [InlineKeyboardButton("Custom", callback_data=json.dumps({
-                "a": "sel", "c": campaign.get('id')
+                "action": "select_campaign", "campaign_id": campaign.get('id')
             }))]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -256,11 +225,9 @@ async def _handle_direct_donation(update: Update, context: ContextTypes.DEFAULT_
 async def _generate_donation_link(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, amount: Decimal, tg_id: str, user_state: dict) -> bool:
     """Generate MetaMask deep link and show donation button"""
     try:
-        # Use NGO's wallet address for donations
-        ngo = campaign.get('ngo', {})
-        wallet_address = ngo.get('wallet_address')
+        wallet_address = campaign.get('wallet_address')
         if not wallet_address:
-            await update.message.reply_text("NGO wallet missing. Please contact support.")
+            await update.message.reply_text("Campaign wallet missing. Please contact support.")
             return True
         
         token = user_state.get('pending_token', 'AVAX')
@@ -278,22 +245,14 @@ async def _generate_donation_link(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(f"Couldn't generate link: {result['error']}")
             return True
         
-        # Create inline button with deep link and network setup
+        # Create inline button with deep link
         deep_link = result["deep_link"]
-        keyboard = [
-            [InlineKeyboardButton("🦊 Donate with MetaMask", url=deep_link)],
-            [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
-        ]
+        keyboard = [[InlineKeyboardButton("🦊 Donate with MetaMask", url=deep_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         campaign_title = campaign.get('title', 'Campaign')
-        message_text = (
-            f"Great! {amount} {token} to *{campaign_title}*\n\n"
-            f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
-            f"Tap to donate:"
-        )
         await update.message.reply_text(
-            message_text,
+            f"Great! {amount} {token} to *{campaign_title}*. Tap to donate:",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
@@ -354,11 +313,11 @@ async def _handle_with_llm(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
     if metrics:
         metrics.latency.observe(time.perf_counter() - started)
-    await update.message.reply_text(final_text, disable_web_page_preview=True)
+        await update.message.reply_text(final_text, disable_web_page_preview=True)
 
 
 async def _show_campaign_detail_with_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, user_state: dict):
-    """Show campaign detail with amount selection buttons"""
+    """Show campaign detail with amount selection buttons (for regular messages, not callbacks)"""
     title = campaign.get('title', 'Campaign')
     ngo_name = campaign.get('ngo_name', '')
     min_amount = Decimal(str(campaign.get('min_amount', 0.0001)))
@@ -375,7 +334,7 @@ async def _show_campaign_detail_with_amounts(update: Update, context: ContextTyp
         if len(amount_row) >= 3:
             keyboard.append(amount_row)
             amount_row = []
-        callback_data = json.dumps({"a": "amt", "c": campaign_id, "v": str(amount)})
+        callback_data = json.dumps({"action": "donate_amount", "campaign_id": campaign_id, "amount": str(amount)})
         amount_row.append(InlineKeyboardButton(f"{amount} AVAX", callback_data=callback_data))
     
     if amount_row:
@@ -384,7 +343,81 @@ async def _show_campaign_detail_with_amounts(update: Update, context: ContextTyp
     # Token toggle button
     current_token = user_state.get('pending_token', 'AVAX')
     other_token = 'USDT' if current_token == 'AVAX' else 'AVAX'
-    toggle_callback = json.dumps({"a": "tok", "c": campaign_id, "t": other_token})
+    toggle_callback = json.dumps({"action": "toggle_token", "campaign_id": campaign_id, "token": other_token})
+    keyboard.append([InlineKeyboardButton(f"Switch to {other_token}", callback_data=toggle_callback)])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message_text = (
+        f"*{title}* — {ngo_name}\n"
+        f"Min: {min_amount} AVAX • Target: {target} AVAX\n"
+        f"Choose an amount:"
+    )
+    
+    await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+
+async def _show_campaign_detail_with_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE, campaign: dict, user_state: dict):
+    """Show campaign detail with amount selection buttons (for regular messages, not callbacks)"""
+    title = campaign.get('title', 'Campaign')
+    ngo_name = campaign.get('ngo_name', '')
+    min_amount = Decimal(str(campaign.get('min_amount', 0.0001)))
+    target = campaign.get('target_amount', 0)
+    campaign_id = campaign.get('id')
+    
+    # Create amount buttons
+    keyboard = []
+    
+    # Suggested amounts
+    amounts = [min_amount, min_amount * 5, min_amount * 10]
+    amount_row = []
+    for amount in amounts:
+        if len(amount_row) >= 3:
+            keyboard.append(amount_row)
+            amount_row = []
+        callback_data = json.dumps({"action": "donate_amount", "campaign_id": campaign_id, "amount": str(amount)})
+        amount_row.append(InlineKeyboardButton(f"{amount} AVAX", callback_data=callback_data))
+    
+    if amount_row:
+        keyboard.append(amount_row)
+    
+    # Token toggle button
+    current_token = user_state.get('pending_token', 'AVAX')
+    other_token = 'USDT' if current_token == 'AVAX' else 'AVAX'
+    toggle_callback = json.dumps({"action": "toggle_token", "campaign_id": campaign_id, "token": other_token})
+    keyboard.append([InlineKeyboardButton(f"Switch to {other_token}", callback_data=toggle_callback)])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message_text = (
+        f"*{title}* — {ngo_name}\n"
+        f"Min: {min_amount} AVAX • Target: {target} AVAX\n"
+        f"Choose an amount:"
+    )
+    
+    await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline keyboard button callbacks"""
+    query = update.callback_query
+    if not query or not query.data:
+        return
+    
+    await query.answer()  # Acknowledge the callback
+        if len(amount_row) >= 3:
+            keyboard.append(amount_row)
+            amount_row = []
+        callback_data = json.dumps({"action": "donate_amount", "campaign_id": campaign_id, "amount": str(amount)})
+        amount_row.append(InlineKeyboardButton(f"{amount} AVAX", callback_data=callback_data))
+    
+    if amount_row:
+        keyboard.append(amount_row)
+    
+    # Token toggle button
+    current_token = user_state.get('pending_token', 'AVAX')
+    other_token = 'USDT' if current_token == 'AVAX' else 'AVAX'
+    toggle_callback = json.dumps({"action": "toggle_token", "campaign_id": campaign_id, "token": other_token})
     keyboard.append([InlineKeyboardButton(f"Switch to {other_token}", callback_data=toggle_callback)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -408,28 +441,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     
     try:
         data = json.loads(query.data)
-        action = data.get("a")  # Shorter key
+        action = data.get("action")
         tg_id = str(query.from_user.id)
         user_state = get_user_state(tg_id)
         
-        if action == "sel":  # select_campaign
+        if action == "select_campaign":
             await _handle_campaign_selection(query, context, data, user_state)
-        elif action == "amt":  # donate_amount
+        elif action == "donate_amount":
             await _handle_amount_selection(query, context, data, tg_id, user_state)
-        elif action == "tok":  # toggle_token
+        elif action == "toggle_token":
             await _handle_token_toggle(query, context, data, user_state)
-        else:
-            await query.edit_message_text(f"Unknown action: {action}")
     
-    except json.JSONDecodeError as e:
-        await query.edit_message_text(f"Button data invalid: {e}")
     except Exception as e:
-        await query.edit_message_text(f"Error loading campaign: {e}")
+        await query.edit_message_text(f"Error: {e}")
 
 
 async def _handle_campaign_selection(query, context: ContextTypes.DEFAULT_TYPE, data: dict, user_state: dict):
     """Handle campaign selection from inline button"""
-    campaign_id = data.get("c")  # Shorter key
+    campaign_id = data.get("campaign_id")
     if not campaign_id:
         await query.edit_message_text("Invalid campaign selection.")
         return
@@ -469,7 +498,7 @@ async def _show_amount_buttons(query, context: ContextTypes.DEFAULT_TYPE, campai
         if len(amount_row) >= 3:
             keyboard.append(amount_row)
             amount_row = []
-        callback_data = json.dumps({"a": "amt", "c": campaign_id, "v": str(amount)})
+        callback_data = json.dumps({"action": "donate_amount", "campaign_id": campaign_id, "amount": str(amount)})
         amount_row.append(InlineKeyboardButton(f"{amount} AVAX", callback_data=callback_data))
     
     if amount_row:
@@ -478,7 +507,7 @@ async def _show_amount_buttons(query, context: ContextTypes.DEFAULT_TYPE, campai
     # Token toggle button
     current_token = user_state.get('pending_token', 'AVAX')
     other_token = 'USDT' if current_token == 'AVAX' else 'AVAX'
-    toggle_callback = json.dumps({"a": "tok", "c": campaign_id, "t": other_token})
+    toggle_callback = json.dumps({"action": "toggle_token", "campaign_id": campaign_id, "token": other_token})
     keyboard.append([InlineKeyboardButton(f"Switch to {other_token}", callback_data=toggle_callback)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -494,8 +523,8 @@ async def _show_amount_buttons(query, context: ContextTypes.DEFAULT_TYPE, campai
 
 async def _handle_amount_selection(query, context: ContextTypes.DEFAULT_TYPE, data: dict, tg_id: str, user_state: dict):
     """Handle amount selection and generate deep link"""
-    campaign_id = data.get("c")  # Shorter key
-    amount_str = data.get("v")  # Shorter key (value)
+    campaign_id = data.get("campaign_id")
+    amount_str = data.get("amount")
     
     if not campaign_id or not amount_str:
         await query.edit_message_text("Invalid amount selection.")
@@ -513,11 +542,9 @@ async def _handle_amount_selection(query, context: ContextTypes.DEFAULT_TYPE, da
                 return
         
         # Generate deep link
-        # Use NGO's wallet address for donations
-        ngo = campaign.get('ngo', {})
-        wallet_address = ngo.get('wallet_address')
+        wallet_address = campaign.get('wallet_address')
         if not wallet_address:
-            await query.edit_message_text("NGO wallet missing. Please contact support.")
+            await query.edit_message_text("Campaign wallet missing. Please contact support.")
             return
         
         token = user_state.get('pending_token', 'AVAX')
@@ -535,22 +562,14 @@ async def _handle_amount_selection(query, context: ContextTypes.DEFAULT_TYPE, da
             await query.edit_message_text(f"Couldn't generate link: {result['error']}")
             return
         
-        # Show donation button with network setup
+        # Show donation button
         deep_link = result["deep_link"]
-        keyboard = [
-            [InlineKeyboardButton("🦊 Donate with MetaMask", url=deep_link)],
-            [InlineKeyboardButton("➕ Add Avalanche Fuji Network", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")]
-        ]
+        keyboard = [[InlineKeyboardButton("🦊 Donate with MetaMask", url=deep_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         campaign_title = campaign.get('title', 'Campaign')
-        message_text = (
-            f"Great! {amount} {token} to *{campaign_title}*\n\n"
-            f"⚠️ *Important*: Make sure MetaMask is connected to *Avalanche Fuji Testnet* (Chain ID: 43113)\n\n"
-            f"Tap to donate:"
-        )
         await query.edit_message_text(
-            message_text,
+            f"Great! {amount} {token} to *{campaign_title}*. Tap to donate:",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
@@ -564,8 +583,8 @@ async def _handle_amount_selection(query, context: ContextTypes.DEFAULT_TYPE, da
 
 async def _handle_token_toggle(query, context: ContextTypes.DEFAULT_TYPE, data: dict, user_state: dict):
     """Handle token toggle (AVAX <-> USDT)"""
-    new_token = data.get("t", 'AVAX')  # Shorter key (token)
-    campaign_id = data.get("c")  # Shorter key
+    new_token = data.get("token", 'AVAX')
+    campaign_id = data.get("campaign_id")
     
     user_state['pending_token'] = new_token
     user_state['pending_decimals'] = 18 if new_token == 'AVAX' else 6
@@ -580,8 +599,6 @@ async def _handle_token_toggle(query, context: ContextTypes.DEFAULT_TYPE, data: 
         await query.edit_message_text(f"Error: {e}")
 
 
-__all__ = ["handle_message", "handle_callback_query"]
-
-# Module-level simple cache (declared after function to satisfy linters ordering preferences)
+__all__ = ["handle_message", "handle_callback_query"]# Module-level simple cache (declared after function to satisfy linters ordering preferences)
 _REGISTERED_USERS_CACHE = set()
 _REGISTERED_USERS_ORDER = []

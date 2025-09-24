@@ -194,3 +194,8 @@ BOT_NOTIFY_SECRET = config('BOT_NOTIFY_SECRET', default='')
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
+
+# Authentication redirect configuration
+# Avoid Django default redirect to /accounts/profile/ which 404s in this project
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'

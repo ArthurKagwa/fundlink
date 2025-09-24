@@ -5,22 +5,32 @@ from ngos.serializers import NGOPublicSerializer
 
 class CampaignSerializer(serializers.ModelSerializer):
     ngo = NGOPublicSerializer(read_only=True)
+    ngo_name = serializers.CharField(source='ngo.name', read_only=True)
     is_live = serializers.ReadOnlyField()
     total_donations = serializers.ReadOnlyField()
-    
+    status = serializers.CharField(read_only=True)
+    rejection_reason = serializers.CharField(read_only=True)
+
     class Meta:
         model = Campaign
-        fields = ['id', 'ngo', 'title', 'description', 'token_options', 
-                 'min_amount', 'target_amount', 'is_live', 'total_donations', 'created_at']
+        fields = [
+            'id', 'ngo', 'ngo_name', 'title', 'description', 'token_options',
+            'min_amount', 'target_amount', 'status', 'rejection_reason',
+            'is_live', 'total_donations', 'created_at'
+        ]
 
 
 class CampaignCreateSerializer(serializers.ModelSerializer):
     """Serializer for NGOs to create campaigns"""
-    
     class Meta:
         model = Campaign
         fields = ['title', 'description', 'token_options', 'min_amount', 'target_amount']
-    
+
+    def validate_description(self, value):
+        if len(value) < 50:
+            raise serializers.ValidationError('Description must be at least 50 characters.')
+        return value
+
     def validate_token_options(self, value):
         valid_tokens = ['AVAX', 'USDT']
         if not isinstance(value, list):
