@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fundlink}
+      POSTGRES_USER: ${POSTGRES_USER:-fundlink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fundlink-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fundlink}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - fundlink-network
+
+  web:
+    image: ${DOCKER_USERNAME}/fundlink-web:${IMAGE_TAG:-latest}
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-fundlink}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fundlink}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=false
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - AVALANCHE_RPC_URL=${AVALANCHE_RPC_URL:-https://api.avax-test.network/ext/bc/C/rpc}
+      - AVALANCHE_CHAIN_ID=${AVALANCHE_CHAIN_ID:-43113}
+      - USDT_CONTRACT_ADDRESS=${USDT_CONTRACT_ADDRESS:-0x5425890298aed601595a70AB815c96711a31Bc65}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - fundlink-network
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --bind 0.0.0.0:8000 --workers 3 fundlink_backend.wsgi:application"
+    restart: unless-stopped
+
+  bot:
+    image: ${DOCKER_USERNAME}/fundlink-bot:${IMAGE_TAG:-latest}
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL}
+      - PUBLIC_WEBHOOK_BASE=${PUBLIC_WEBHOOK_BASE}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - TOGETHER_API_KEY=${TOGETHER_API_KEY}
+      - TOGETHER_MODEL=${TOGETHER_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      - TOGETHER_MODEL_FALLBACK=${TOGETHER_MODEL_FALLBACK:-meta-llama/Llama-3.1-8B-Instruct}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.2}
+      - HTTP_TIMEOUT=${HTTP_TIMEOUT:-20}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - web
+    networks:
+      - fundlink-network
+    restart: unless-stopped
+
+  verifier:
+    image: ${DOCKER_USERNAME}/fundlink-verifier:${IMAGE_TAG:-latest}
+    environment:
+      - AVALANCHE_RPC_URL=${AVALANCHE_RPC_URL:-https://api.avax-test.network/ext/bc/C/rpc}
+      - AVALANCHE_CHAIN_ID=${AVALANCHE_CHAIN_ID:-43113}
+      - USDT_CONTRACT_ADDRESS=${USDT_CONTRACT_ADDRESS:-0x5425890298aed601595a70AB815c96711a31Bc65}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - web
+    networks:
+      - fundlink-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  fundlink-network:
+    driver: bridge

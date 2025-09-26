@@ -24,6 +24,7 @@ class VerifierSettings:
     state_path: Path = Path("donation_verifier_state.json")
     start_block: Optional[int] = None
     log_level: str = "INFO"
+    bot_notify_secret: Optional[str] = None
 
     @classmethod
     def load(cls) -> "VerifierSettings":
@@ -31,7 +32,7 @@ class VerifierSettings:
         if root_env.exists():
             load_dotenv(root_env)
 
-        rpc_url = os.getenv('FUJI_RPC_URL') or os.getenv('RPC_URL')
+        rpc_url = os.getenv('AVALANCHE_RPC_URL') or os.getenv('FUJI_RPC_URL') or os.getenv('RPC_URL')
         backend_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
         internal_api_key = os.getenv('INTERNAL_API_KEY', '')
         chain_id = int(os.getenv('CHAIN_ID', 43113))
@@ -42,9 +43,10 @@ class VerifierSettings:
         start_block_raw = os.getenv('VERIFIER_START_BLOCK')
         start_block = int(start_block_raw) if start_block_raw else None
         log_level = os.getenv('VERIFIER_LOG_LEVEL', 'INFO')
+        bot_notify_secret = os.getenv('BOT_NOTIFY_SECRET', '')
 
         if not rpc_url:
-            raise RuntimeError('FUJI_RPC_URL (or RPC_URL) must be set for the donation verifier')
+            raise RuntimeError('AVALANCHE_RPC_URL (or FUJI_RPC_URL/RPC_URL) must be set for the donation verifier')
         if not internal_api_key:
             raise RuntimeError('INTERNAL_API_KEY must be configured for verifier backend calls')
 
@@ -59,4 +61,5 @@ class VerifierSettings:
             state_path=state_path,
             start_block=start_block,
             log_level=log_level,
+            bot_notify_secret=bot_notify_secret,
         )

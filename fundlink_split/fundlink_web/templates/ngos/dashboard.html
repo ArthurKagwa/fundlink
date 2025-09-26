@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}NGO Dashboard - FundLink{% endblock %}
+{% block content %}
+<h1>NGO Dashboard</h1>
+<p class="text-muted">Manage your organization and campaigns.</p>
+<div class="card" style="margin-bottom:1.5rem;">
+  <h3 style="margin-bottom:0.5rem;">Organization Status</h3>
+  <p><strong>Name:</strong> {{ ngo.name }}<br>
+     <strong>Email:</strong> {{ ngo.email }}<br>
+     <strong>Status:</strong> {{ ngo.status|title }} {% if ngo.status == 'rejected' and ngo.rejection_reason %}<span style="color:#b00;">(Reason: {{ ngo.rejection_reason }})</span>{% endif %}<br>
+     <strong>Wallet:</strong> {{ ngo.wallet_address }}
+  </p>
+  {% if ngo.status != 'approved' %}
+    <div class="alert alert-info">Your NGO is currently {{ ngo.status }}. You will gain full access once approved.</div>
+  {% endif %}
+</div>
+
+<h3>Your Campaigns</h3>
+{% if ngo.status == 'approved' %}
+<div class="card" style="margin:1rem 0;">
+  <h3 style="margin-bottom:0.5rem;">Create New Campaign</h3>
+  <form id="create-campaign-form">
+    <div style="margin-bottom:0.75rem;">
+      <label for="cc-title">Title</label>
+      <input id="cc-title" name="title" required maxlength="200" placeholder="Campaign title">
+    </div>
+    <div style="margin-bottom:0.75rem;">
+      <label for="cc-description">Description</label>
+      <textarea id="cc-description" name="description" rows="5" placeholder="Describe the need, beneficiaries, and how funds will be used (min 50 chars)" required></textarea>
+    </div>
+    <div style="margin-bottom:0.75rem;">
+      <label>Accepted Tokens</label>
+      <div style="margin-top:0.5rem;">
+        <label style="margin-right:1rem;"><input type="checkbox" name="token_options" value="AVAX" checked> AVAX</label>
+        <label style="margin-right:1rem;"><input type="checkbox" name="token_options" value="USDT"> USDT</label>
+      </div>
+    </div>
+    <div class="grid">
+      <div>
+        <label for="cc-min">Minimum Amount</label>
+        <input id="cc-min" name="min_amount" type="number" step="0.000001" min="0" placeholder="0.01" value="0.01">
+      </div>
+      <div>
+        <label for="cc-target">Target Amount (optional)</label>
+        <input id="cc-target" name="target_amount" type="number" step="0.000001" min="0" placeholder="10">
+      </div>
+    </div>
+    <div style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center;">
+      <button type="submit" class="btn">Create Campaign</button>
+      <span id="cc-status" class="text-muted" style="display:none;"></span>
+    </div>
+  </form>
+</div>
+{% endif %}
+<table style="width:100%; border-collapse:collapse;">
+  <thead>
+    <tr style="text-align:left; border-bottom:1px solid #ccc;">
+      <th style="padding:0.5rem;">Title</th>
+      <th style="padding:0.5rem;">Status</th>
+      <th style="padding:0.5rem;">Donations</th>
+      <th style="padding:0.5rem;">Created</th>
+      <th style="padding:0.5rem;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in campaigns %}
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:0.5rem;">{{ c.title }}</td>
+      <td style="padding:0.5rem;">{{ c.status|title }}{% if c.status == 'rejected' and c.rejection_reason %}<br><span style="color:#b00;font-size:0.8rem;">{{ c.rejection_reason }}</span>{% endif %}</td>
+      <td style="padding:0.5rem;">{{ c.total_donations }}</td>
+      <td style="padding:0.5rem;">{{ c.created_at|date:'Y-m-d' }}</td>
+      <td style="padding:0.5rem;">
+        {% if c.status == 'draft' or c.status == 'rejected' %}
+          {% if ngo.status == 'approved' %}
+            <button class="btn btn-outline" data-action="submit-campaign" data-id="{{ c.id }}">Submit for review</button>
+          {% else %}
+            <span class="text-muted">Waiting NGO approval</span>
+          {% endif %}
+        {% elif c.status == 'submitted' %}
+          <span class="text-muted">Awaiting review</span>
+        {% elif c.status == 'approved' %}
+          <span class="text-muted">Live</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" style="padding:0.75rem;">No campaigns yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+const csrftoken = getCookie('csrftoken');
+
+const createForm = document.getElementById('create-campaign-form');
+if (createForm) {
+  createForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById('cc-status');
+    statusEl.style.display = 'inline';
+    statusEl.textContent = 'Creating...';
+    const tokens = Array.from(document.querySelectorAll('input[name="token_options"]:checked')).map(i => i.value);
+    const payload = {
+      title: document.getElementById('cc-title').value.trim(),
+      description: document.getElementById('cc-description').value.trim(),
+      token_options: tokens,
+      min_amount: document.getElementById('cc-min').value || '0.01',
+      target_amount: document.getElementById('cc-target').value || null
+    };
+    try {
+      const resp = await fetch('/api/campaigns/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || JSON.stringify(err));
+      }
+      statusEl.textContent = 'Created! Refreshing...';
+      window.location.reload();
+    } catch (err) {
+      statusEl.textContent = 'Error: ' + err.message;
+    }
+  });
+}
+
+document.querySelectorAll('button[data-action="submit-campaign"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.getAttribute('data-id');
+    btn.disabled = true; btn.textContent = 'Submitting...';
+    try {
+      const resp = await fetch(`/api/campaigns/${id}/submit/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrftoken }
+      });
+      if (!resp.ok) throw new Error('Failed to submit');
+      window.location.reload();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Submit for review';
+      alert('Error submitting: ' + e.message);
+    }
+  });
+});
+</script>
+{% endblock %}

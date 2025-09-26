@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Review Campaigns - FundLink{% endblock %}
+{% block content %}
+<h1>Submitted Campaigns</h1>
+<p class="text-muted">Approve or reject campaigns submitted by NGOs.</p>
+
+<div id="flash" class="text-muted" style="margin:0.5rem 0;"></div>
+
+<table style="width:100%; border-collapse:collapse;">
+  <thead>
+    <tr style="text-align:left; border-bottom:1px solid #ccc;">
+      <th style="padding:0.5rem;">Title</th>
+      <th style="padding:0.5rem;">NGO</th>
+      <th style="padding:0.5rem;">Submitted</th>
+      <th style="padding:0.5rem;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in pending_campaigns %}
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:0.5rem;">{{ c.title }}</td>
+      <td style="padding:0.5rem;">{{ c.ngo.name }}</td>
+      <td style="padding:0.5rem;">{{ c.submitted_at|date:'Y-m-d H:i' }}</td>
+      <td style="padding:0.5rem; display:flex; gap:0.5rem;">
+        <button class="btn" data-action="approve" data-id="{{ c.id }}">Approve</button>
+        <button class="btn btn-outline" data-action="reject" data-id="{{ c.id }}">Reject</button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" style="padding:0.75rem;">No submitted campaigns.</td></tr>
+    {% endfor %}
+  </tbody>
+  </table>
+
+  {% if recent_rejected %}
+  <h3 style="margin-top:2rem;">Recently Rejected</h3>
+  <ul>
+    {% for c in recent_rejected %}
+      <li>{{ c.title }} — {{ c.ngo.name }} <span class="text-muted">({{ c.rejection_reason }})</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+<script>
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+}
+const csrftoken = getCookie('csrftoken');
+
+const flash = document.getElementById('flash');
+
+async function approve(id) {
+  const resp = await fetch(`/api/campaigns/${id}/approve/`, { method: 'POST', headers: { 'X-CSRFToken': csrftoken }});
+  if (!resp.ok) throw new Error('Approve failed');
+}
+async function reject(id) {
+  const reason = prompt('Enter rejection reason:');
+  if (reason === null) return; // cancelled
+  const resp = await fetch(`/api/campaigns/${id}/reject/`, { 
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+    body: JSON.stringify({ reason })
+  });
+  if (!resp.ok) throw new Error('Reject failed');
+}
+
+document.querySelectorAll('button[data-action]')?.forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.getAttribute('data-id');
+    const action = btn.getAttribute('data-action');
+    btn.disabled = true;
+    try {
+      if (action === 'approve') await approve(id); else await reject(id);
+      flash.textContent = 'Updated.'; 
+      window.location.reload();
+    } catch (e) {
+      flash.textContent = e.message;
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

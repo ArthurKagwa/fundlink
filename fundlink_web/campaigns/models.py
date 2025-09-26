@@ -52,6 +52,53 @@ class Campaign(models.Model):
             total=models.Sum('amount_decimal')
         )['total'] or 0
 
+    @property
+    def total_intents(self):
+        """Total number of donation intents (including pending)"""
+        return self.donation_intents.count()
+
+    @property
+    def total_confirmations(self):
+        """Total number of confirmed donations"""
+        return self.donations.filter(confirmed_at__isnull=False).count()
+
+    @property
+    def progress_percentage(self):
+        """Calculate progress percentage based on target amount"""
+        if not self.target_amount:
+            return None
+        total = self.total_donations
+        if total <= 0:
+            return 0
+        return min(100, (float(total) / float(self.target_amount)) * 100)
+
+    @property
+    def intent_to_confirmation_ratio(self):
+        """Ratio of confirmed donations to total intents"""
+        intents = self.total_intents
+        if intents == 0:
+            return 0
+        confirmations = self.total_confirmations
+        return (confirmations / intents) * 100
+
+    @property
+    def funding_progress(self):
+        """Comprehensive funding progress data"""
+        total_raised = self.total_donations
+        target = self.target_amount
+        intents = self.total_intents
+        confirmations = self.total_confirmations
+        
+        return {
+            'total_raised': float(total_raised),
+            'target_amount': float(target) if target else None,
+            'progress_percentage': self.progress_percentage,
+            'total_donors': confirmations,
+            'total_intents': intents,
+            'intent_confirmation_rate': self.intent_to_confirmation_ratio,
+            'is_target_reached': bool(target and total_raised >= target),
+        }
+
     # Moderation helpers
     def submit_for_review(self):
         if self.status != self.STATUS_DRAFT and self.status != self.STATUS_REJECTED:

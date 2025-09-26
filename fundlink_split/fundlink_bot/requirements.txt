@@ -1,0 +1,12 @@
+Django==5.2.6
+python-telegram-bot==21.0.1
+httpx
+pydantic==1.10.13
+celery==5.4.0
+redis==5.0.1
+python-dotenv==1.0.0
+psycopg[binary]==3.2.3
+prometheus-client>=0.20
+together>=0.2.11
+# Local packages
+-e ../common

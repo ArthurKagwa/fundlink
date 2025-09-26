@@ -8,6 +8,8 @@ from django.utils.decorators import method_decorator
 import hmac
 import hashlib
 import json
+import requests
+import os
 
 INTERNAL_KEY_HEADER = 'Authorization'
 from .models import NotificationLog
@@ -54,12 +56,15 @@ def bot_notify(request):
             sent_successfully=False
         )
         
-        # Here you would typically send the notification to a queue or directly to Telegram
-        # For now, we'll just log it and return success
-        # TODO: Implement actual Telegram notification sending
-        
-        log.sent_successfully = True
-        log.save()
+        # Actually send the notification to Telegram
+        try:
+            telegram_sent = _send_telegram_notification(telegram_id, message_type, message_data)
+            log.sent_successfully = telegram_sent
+            log.save()
+        except Exception as e:
+            log.sent_successfully = False
+            log.save()
+            return Response({'error': f'Failed to send Telegram notification: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         return Response({
             'success': True,
@@ -179,3 +184,60 @@ def health_check(request):
         'service': 'fundlink_backend',
         'version': '1.0.0'
     })
+
+
+def _send_telegram_notification(telegram_id: int, message_type: str, message_data: dict) -> bool:
+    """Send actual notification to Telegram user"""
+    try:
+        # Get Telegram bot token from environment
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        if not bot_token:
+            print(f"❌ TELEGRAM_BOT_TOKEN not configured")
+            return False
+            
+        # Format the message based on type
+        if message_type == 'donation_receipt' or message_type == 'donation_confirmed':
+            amount = message_data.get('amount') or message_data.get('amount_decimal', 'Unknown')
+            token = message_data.get('token', 'AVAX')
+            ngo_name = message_data.get('ngo_name', 'Unknown NGO')
+            tx_hash = message_data.get('tx_hash', '')
+            explorer_url = message_data.get('explorer_url', '')
+            
+            message = f"🎉 **Donation Confirmed!**\\n\\n"
+            message += f"💰 Amount: {amount} {token}\\n"
+            message += f"🏢 NGO: {ngo_name}\\n"
+            if tx_hash:
+                short_hash = f"{tx_hash[:10]}...{tx_hash[-8:]}" if len(tx_hash) > 20 else tx_hash
+                message += f"📄 Transaction: `{short_hash}`\\n"
+            if explorer_url:
+                message += f"🔍 [View on Snowtrace]({explorer_url})\\n"
+            message += f"\\nThank you for your donation! 💝"
+        else:
+            message = f"📢 Notification: {message_type}\\n\\nData: {json.dumps(message_data, indent=2)}"
+        
+        # Send message via Telegram Bot API
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            'chat_id': telegram_id,
+            'text': message,
+            'parse_mode': 'Markdown',
+            'disable_web_page_preview': False
+        }
+        
+        response = requests.post(url, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                print(f"✅ Telegram notification sent to {telegram_id}")
+                return True
+            else:
+                print(f"❌ Telegram API error: {result.get('description', 'Unknown error')}")
+                return False
+        else:
+            print(f"❌ Telegram API HTTP error: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error sending Telegram notification: {e}")
+        return False

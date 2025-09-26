@@ -6,6 +6,7 @@ from django.contrib.auth import login
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
+from django.utils import timezone
 from campaigns.models import Campaign
 from ngos.models import NGO
 from ngos.serializers import NGOApplicationSerializer
@@ -168,6 +169,69 @@ def recent_donations_api(request, campaign_id):
         return JsonResponse({'error': 'Campaign not found'}, status=404)
 
 
+def dashboard_overview_api(request):
+    """Public dashboard API endpoint with comprehensive tracking"""
+    try:
+        # Get all approved campaigns
+        campaigns = Campaign.objects.filter(
+            status=Campaign.STATUS_APPROVED, 
+            ngo__status='approved'
+        )
+        
+        # Calculate overview statistics
+        total_campaigns = campaigns.count()
+        total_raised = sum(c.total_donations for c in campaigns)
+        total_intents = sum(c.total_intents for c in campaigns)
+        total_confirmations = sum(c.total_confirmations for c in campaigns)
+        
+        # Calculate overall intent-to-confirmation rate
+        overall_conversion_rate = 0
+        if total_intents > 0:
+            overall_conversion_rate = (total_confirmations / total_intents) * 100
+        
+        # Get campaigns with progress data
+        campaign_progress = []
+        for campaign in campaigns.order_by('-created_at')[:10]:
+            progress_data = campaign.funding_progress
+            progress_data.update({
+                'id': campaign.id,
+                'title': campaign.title,
+                'ngo_name': campaign.ngo.name,
+                'created_at': campaign.created_at.isoformat(),
+            })
+            campaign_progress.append(progress_data)
+        
+        # Get NGO statistics  
+        approved_ngos = NGO.objects.filter(status='approved')
+        ngo_stats = []
+        for ngo in approved_ngos[:5]:
+            ngo_stats.append({
+                'id': ngo.id,
+                'name': ngo.name,
+                'total_campaigns': ngo.total_campaigns,
+                'active_campaigns': ngo.active_campaigns,
+                'total_raised': float(ngo.total_donations_received),
+                'total_donors': ngo.total_donors,
+            })
+        
+        return JsonResponse({
+            'overview': {
+                'total_campaigns': total_campaigns,
+                'total_raised': float(total_raised),
+                'total_intents': total_intents,
+                'total_confirmations': total_confirmations,
+                'conversion_rate': round(overall_conversion_rate, 1),
+                'total_ngos': approved_ngos.count(),
+            },
+            'campaign_progress': campaign_progress,
+            'featured_ngos': ngo_stats,
+            'last_updated': timezone.now().isoformat(),
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 def register_view(request):
     """User registration view"""
     if request.method == 'POST':
@@ -230,4 +294,14 @@ class StaffCampaignReviewView(TemplateView):
         context['page_title'] = 'Review Submitted Campaigns'
         context['pending_campaigns'] = Campaign.objects.select_related('ngo').filter(status=Campaign.STATUS_SUBMITTED)
         context['recent_rejected'] = Campaign.objects.select_related('ngo').filter(status=Campaign.STATUS_REJECTED).order_by('-updated_at')[:10]
+        return context
+
+
+class PublicDashboardView(TemplateView):
+    """Public dashboard with comprehensive tracking for all users"""
+    template_name = 'dashboard/public.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Impact Dashboard'
         return context

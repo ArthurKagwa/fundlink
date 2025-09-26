@@ -2,6 +2,41 @@
 
 {% block title %}{{ campaign.title }} - FundLink{% endblock %}
 
+{% block extra_css %}
+<style>
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.progress-fill:hover {
+    filter: brightness(1.1);
+}
+
+.stat-item:hover {
+    transform: translateY(-2px);
+    transition: transform 0.2s ease;
+}
+
+.intent-indicator:hover {
+    transform: scale(1.05);
+}
+
+.loading-shimmer {
+    animation: shimmer 2s infinite;
+}
+
+.stat-loading {
+    animation: pulse 1.5s infinite;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div style="margin-bottom: 1rem;">
     <a href="{% url 'main:campaigns_list' %}">&larr; Back to Campaigns</a>
@@ -13,18 +48,155 @@
 
 <div class="grid" style="margin: 2rem 0;">
     <div class="card">
-        <h3>Target Amount</h3>
+        <h3>Funding Progress</h3>
+        {% if campaign.target_amount %}
+        <div id="progress-container">
+            <!-- Progress Bar -->
+            <div class="progress-wrapper" style="margin: 1.5rem 0;">
+                <div class="progress-bar-container" style="width: 100%; height: 30px; background-color: #f8f9fa; border-radius: 15px; overflow: hidden; position: relative; border: 2px solid #e9ecef;">
+                    <div id="progress-fill" class="progress-fill" style="
+                        height: 100%; 
+                        background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
+                        width: 0%; 
+                        transition: width 1.2s ease-in-out; 
+                        position: relative;
+                        box-shadow: inset 0 2px 4px rgba(255,255,255,0.3);
+                    ">
+                        <div style="
+                            position: absolute;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+                            animation: shimmer 2s infinite;
+                        "></div>
+                    </div>
+                    <span id="progress-text" style="
+                        position: absolute; 
+                        top: 50%; 
+                        left: 50%; 
+                        transform: translate(-50%, -50%); 
+                        color: #495057; 
+                        font-size: 1rem; 
+                        font-weight: bold; 
+                        text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+                        z-index: 10;
+                    ">0%</span>
+                </div>
+            </div>
+            
+            <!-- Progress Labels -->
+            <div class="progress-labels" style="display: flex; justify-content: space-between; font-size: 0.9rem; color: #6c757d; margin-bottom: 1.5rem;">
+                <span id="raised-amount" style="font-weight: 600; color: #28a745;">0 AVAX</span>
+                <span style="font-weight: 600;">Goal: {{ campaign.target_amount }} {{ campaign.token_options.0|default:"AVAX" }}</span>
+            </div>
+            
+            <!-- Target Reached Badge -->
+            <div id="target-reached-badge" style="display: none; text-align: center; margin-bottom: 1rem;">
+                <span class="badge" style="background: linear-gradient(45deg, #28a745, #20c997); color: white; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem;">
+                    🎉 Target Reached!
+                </span>
+            </div>
+        </div>
+        {% else %}
+        <div class="no-target" style="text-align: center; padding: 2rem; color: #6c757d;">
+            <i class="fas fa-bullseye fa-2x mb-2" style="color: #dee2e6;"></i>
+            <p class="mb-0">No funding target set</p>
+        </div>
+        {% endif %}
+        
+        <!-- Funding Statistics Grid -->
+        <div id="funding-stats" style="
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
+            gap: 1rem; 
+            font-size: 0.9rem;
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        ">
+            <div class="stat-item" style="text-align: center;">
+                <div style="color: #6c757d; font-size: 0.8rem; margin-bottom: 0.2rem;">Donors</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: #495057;">
+                    <span id="total-donors">0</span>
+                </div>
+            </div>
+            <div class="stat-item" style="text-align: center;">
+                <div style="color: #6c757d; font-size: 0.8rem; margin-bottom: 0.2rem;">Intents</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: #495057;">
+                    <span id="donation-intents">0</span>
+                </div>
+            </div>
+            <div class="stat-item" style="text-align: center;">
+                <div style="color: #6c757d; font-size: 0.8rem; margin-bottom: 0.2rem;">Donations</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: #495057;">
+                    <span id="total-donations">0</span>
+                </div>
+            </div>
+            <div class="stat-item" style="text-align: center;">
+                <div style="color: #6c757d; font-size: 0.8rem; margin-bottom: 0.2rem;">Total Raised</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: #28a745;">
+                    <span id="total-amount">0 AVAX</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Success Rate Indicator -->
+        <div id="intent-conversion" style="margin-top: 1.5rem; text-align: center;">
+            <div style="margin-bottom: 0.5rem; color: #6c757d; font-size: 0.9rem;">Intent Success Rate</div>
+            <div class="success-rate-container" style="display: inline-block; position: relative;">
+                <span id="conversion-rate" class="intent-indicator" style="
+                    display: inline-block; 
+                    padding: 0.5rem 1rem; 
+                    border-radius: 20px; 
+                    font-size: 1rem; 
+                    font-weight: bold;
+                    background: #f8f9fa;
+                    border: 2px solid #e9ecef;
+                    min-width: 80px;
+                    transition: all 0.3s ease;
+                ">0%</span>
+            </div>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="progress-loading" style="display: none; text-align: center; padding: 2rem; color: #6c757d;">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+            <span>Loading progress...</span>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>Quick Donate</h3>
         <p><strong>{{ campaign.target_amount }} {{ campaign.token_options.0|default:"AVAX" }}</strong></p>
         {% if campaign.min_amount %}
         <p class="text-muted">Minimum: {{ campaign.min_amount }} {{ campaign.token_options.0|default:"AVAX" }}</p>
         {% endif %}
     </div>
-    
-    <div class="card">
-        <h3>Donations</h3>
-        <p id="donation-stats">Loading...</p>
-    </div>
 </div>
+
+<style>
+.intent-indicator.high {
+    background-color: #d5f4e6;
+    color: #27ae60;
+}
+
+.intent-indicator.medium {
+    background-color: #fef9e7;
+    color: #f39c12;
+}
+
+.intent-indicator.low {
+    background-color: #fadbd8;
+    color: #e74c3c;
+}
+
+.progress-fill.target-reached {
+    background: linear-gradient(90deg, #27ae60, #229954) !important;
+}
+</style>
 
 <div class="card" style="max-width: 400px;">
     <h3>Make a Donation</h3>
@@ -103,39 +275,133 @@ document.getElementById('donation-form').addEventListener('submit', function(e) 
     window.open(metamaskLink, '_blank');
 });
 
+// Load donation stats and progress
+async function loadCampaignProgress() {
+    try {
+        const [progressResponse, donationsResponse] = await Promise.all([
+            fetch(`/api/campaigns/${campaignId}/progress/`),
+            fetch(`/api/donations/?campaign=${campaignId}`)
+        ]);
+        
+        if (progressResponse.ok && donationsResponse.ok) {
+            const progressData = await progressResponse.json();
+            const donationsData = await donationsResponse.json();
+            const donations = donationsData.results || donationsData;
+            
+        // Update progress bar with enhanced animations
+        const progress = progressData.funding_progress;
+        if (progress && document.getElementById('progress-fill')) {
+            const percentage = progress.progress_percentage || 0;
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const targetReachedBadge = document.getElementById('target-reached-badge');
+            
+            // Animate progress bar
+            setTimeout(() => {
+                progressFill.style.width = Math.min(percentage, 100) + '%';
+            }, 300);
+            
+            progressText.textContent = percentage.toFixed(1) + '%';
+            
+            // Update raised amount with proper formatting
+            const raisedAmount = progress.total_raised || 0;
+            document.getElementById('raised-amount').textContent = 
+                `${raisedAmount.toFixed(3)} AVAX`;
+            
+            // Show target reached badge if goal is met
+            if (progress.is_target_reached && targetReachedBadge) {
+                targetReachedBadge.style.display = 'block';
+            }
+            
+            // Update progress text color based on progress
+            if (percentage > 50) {
+                progressText.style.color = 'white';
+                progressText.style.textShadow = '1px 1px 2px rgba(0,0,0,0.5)';
+            } else {
+                progressText.style.color = '#495057';
+                progressText.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
+            }
+        }            // Update funding stats
+            if (progressData.funding_progress) {
+                const fp = progressData.funding_progress;
+                document.getElementById('total-donors').textContent = fp.total_donors || 0;
+                document.getElementById('donation-intents').textContent = fp.total_intents || 0;
+                
+                const conversionRate = fp.intent_confirmation_rate || 0;
+                const conversionEl = document.getElementById('conversion-rate');
+                if (conversionEl) {
+                    conversionEl.textContent = conversionRate.toFixed(1) + '%';
+                    
+                    // Set conversion rate indicator styling based on rate
+                    conversionEl.className = 'intent-indicator';
+                    conversionEl.style.cssText = `
+                        display: inline-block; 
+                        padding: 0.5rem 1rem; 
+                        border-radius: 20px; 
+                        font-size: 1rem; 
+                        font-weight: bold;
+                        min-width: 80px;
+                        transition: all 0.3s ease;
+                    `;
+                    
+                    if (conversionRate >= 80) {
+                        conversionEl.style.background = 'linear-gradient(45deg, #28a745, #20c997)';
+                        conversionEl.style.color = 'white';
+                        conversionEl.style.border = '2px solid #28a745';
+                    } else if (conversionRate >= 60) {
+                        conversionEl.style.background = 'linear-gradient(45deg, #ffc107, #fd7e14)';
+                        conversionEl.style.color = 'white';
+                        conversionEl.style.border = '2px solid #ffc107';
+                    } else if (conversionRate >= 30) {
+                        conversionEl.style.background = 'linear-gradient(45deg, #fd7e14, #dc3545)';
+                        conversionEl.style.color = 'white';
+                        conversionEl.style.border = '2px solid #fd7e14';
+                    } else {
+                        conversionEl.style.background = '#f8f9fa';
+                        conversionEl.style.color = '#6c757d';
+                        conversionEl.style.border = '2px solid #e9ecef';
+                    }
+                }
+            }
+            
+            // Show recent donations
+            const donationsList = document.getElementById('donations-list');
+            if (donationsList) {
+                if (donations.length > 0) {
+                    donationsList.innerHTML = donations.slice(0, 5).map(donation => `
+                        <div class="card">
+                            <p><strong>${donation.amount_decimal} ${donation.token}</strong></p>
+                            <p class="text-muted">${new Date(donation.confirmed_at || donation.created_at).toLocaleDateString()}</p>
+                            ${donation.tx_hash ? `<p><a href="https://testnet.snowtrace.io/tx/${donation.tx_hash}" target="_blank">View Transaction</a></p>` : ''}
+                        </div>
+                    `).join('');
+                } else {
+                    donationsList.innerHTML = '<p class="text-muted">No donations yet. Be the first!</p>';
+                }
+            }
+        } else {
+            throw new Error('Failed to load campaign data');
+        }
+    } catch (error) {
+        console.error('Error loading campaign progress:', error);
+        document.querySelectorAll('#progress-container, #funding-stats').forEach(el => {
+            if (el) el.innerHTML = '<p class="text-muted">Unable to load progress data.</p>';
+        });
+    }
+}
+
 // Load donation stats
 fetch(`/api/donations/?campaign=${campaignId}`)
-    .then(response => response.json())
-    .then(data => {
-        const donations = data.results || data;
-        const totalAmount = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-        
-        document.getElementById('donation-stats').innerHTML = 
-            `<strong>${donations.length}</strong> donations<br><strong>${totalAmount.toFixed(3)}</strong> total`;
-        
-        // Show recent donations
-        const donationsList = document.getElementById('donations-list');
-        if (donations.length > 0) {
-            donationsList.innerHTML = donations.slice(0, 5).map(donation => `
-                <div class="card">
-                    <p><strong>${donation.amount} ${donation.token}</strong></p>
-                    <p class="text-muted">${new Date(donation.created_at).toLocaleDateString()}</p>
-                    ${donation.tx_hash ? `<p><a href="https://testnet.snowtrace.io/tx/${donation.tx_hash}" target="_blank">View Transaction</a></p>` : ''}
-                </div>
-            `).join('');
-        } else {
-            donationsList.innerHTML = '<p class="text-muted">No donations yet. Be the first!</p>';
-        }
-    })
-    .catch(error => {
-        document.getElementById('donation-stats').innerHTML = 'Unable to load stats';
-        document.getElementById('donations-list').innerHTML = '<p class="text-muted">Unable to load donations.</p>';
-    });
+// Initialize campaign progress loading
+loadCampaignProgress();
+
+// Set up auto-refresh every 30 seconds
+setInterval(loadCampaignProgress, 30000);
 </script>
-                            <button type="submit" class="btn btn-primary btn-lg">
+                            <button type="submit" class="btn btn-success btn-lg">
                                 <i class="fas fa-wallet me-2"></i>Donate with MetaMask
                             </button>
-                            <button type="button" class="btn btn-outline-primary" id="telegram-donate-btn">
+                            <button type="button" class="btn btn-outline-success" id="telegram-donate-btn">
                                 <i class="fab fa-telegram me-2"></i>Donate via Telegram Bot
                             </button>
                         </div>
@@ -146,7 +412,7 @@ fetch(`/api/donations/?campaign=${campaignId}`)
                     <div class="share-section">
                         <h6 class="mb-2">Share this campaign</h6>
                         <div class="d-flex gap-2">
-                            <button class="btn btn-outline-primary btn-sm flex-fill" onclick="shareOnTelegram()">
+                            <button class="btn btn-outline-success btn-sm flex-fill" onclick="shareOnTelegram()">
                                 <i class="fab fa-telegram"></i>
                             </button>
                             <button class="btn btn-outline-info btn-sm flex-fill" onclick="shareOnTwitter()">
@@ -301,10 +567,20 @@ class CampaignDetail {
     async loadDonationStats() {
         try {
             const response = await fetch(`/api/campaigns/${this.campaignId}/stats/`);
-            const stats = await response.json();
-            
-            document.getElementById('total-donations').textContent = stats.total_donations || 0;
-            document.getElementById('total-amount').textContent = `${stats.total_amount || 0} ${stats.primary_token || 'AVAX'}`;
+            if (response.ok) {
+                const stats = await response.json();
+                
+                // Update the stats in the funding stats section
+                const totalDonationsEl = document.getElementById('total-donations');
+                const totalAmountEl = document.getElementById('total-amount');
+                
+                if (totalDonationsEl) {
+                    totalDonationsEl.textContent = stats.total_donations || 0;
+                }
+                if (totalAmountEl) {
+                    totalAmountEl.textContent = `${stats.total_amount || 0} AVAX`;
+                }
+            }
         } catch (error) {
             console.error('Error loading donation stats:', error);
         }
@@ -425,7 +701,7 @@ class CampaignDetail {
     }
 
     donateViaTelegram() {
-        const telegramBotUrl = 'https://t.me/YOUR_BOT_USERNAME'; // Replace with actual bot username
+        const telegramBotUrl = 'https://t.me/fundLink_bot'; // Updated to correct bot username
         const shareUrl = `${telegramBotUrl}?start=donate_${this.campaignId}`;
         window.open(shareUrl, '_blank');
     }
@@ -451,7 +727,7 @@ class CampaignDetail {
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Got it!</button>
+                            <button type="button" class="btn btn-success" data-bs-dismiss="modal">Got it!</button>
                         </div>
                     </div>
                 </div>
@@ -552,7 +828,7 @@ function copyWalletAddress() {
             position: fixed;
             top: 20px;
             right: 20px;
-            background: #17a2b8;
+            background: #28a745;
             color: white;
             padding: 10px 20px;
             border-radius: 5px;

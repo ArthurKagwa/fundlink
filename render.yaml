@@ -1,0 +1,109 @@
+version: "3"
+services:
+  # Main Django Web Application
+  - type: web
+    name: fundlink-web
+    env: python
+    buildCommand: "pip install -r requirements-all.txt && cd fundlink_web && python manage.py migrate && python manage.py collectstatic --noinput"
+    startCommand: "cd fundlink_web && gunicorn --bind 0.0.0.0:$PORT --workers 3 fundlink_backend.wsgi:application"
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_HOSTS
+        value: "*"
+      - key: INTERNAL_API_KEY
+        generateValue: true
+      - key: AVALANCHE_RPC_URL
+        value: "https://api.avax-test.network/ext/bc/C/rpc"
+      - key: AVALANCHE_CHAIN_ID
+        value: "43113"
+      - key: USDT_CONTRACT_ADDRESS
+        value: "0x5425890298aed601595a70AB815c96711a31Bc65"
+      - key: DB_ENGINE
+        value: "django.db.backends.postgresql"
+      - key: DB_NAME
+        fromDatabase:
+          name: fundlink-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: fundlink-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: fundlink-postgres
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: fundlink-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: fundlink-postgres
+          property: port
+
+  # Telegram Bot with LLM
+  - type: worker
+    name: fundlink-bot
+    env: python
+    buildCommand: "pip install -r requirements-all.txt"
+    startCommand: "cd telbot_llm && python run_bot.py"
+    plan: starter
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: TOGETHER_API_KEY
+        sync: false
+      - key: TOGETHER_MODEL
+        value: "meta-llama/Llama-3.2-3B-Instruct-Turbo"
+      - key: TOGETHER_MODEL_FALLBACK
+        sync: false
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: fundlink-web
+          envVarKey: INTERNAL_API_KEY
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: fundlink-web
+          property: host
+
+  # Donation Verifier Service  
+  - type: worker
+    name: fundlink-verifier
+    env: python
+    buildCommand: "pip install -r requirements-all.txt"
+    startCommand: "cd donation_verifier && python main.py"
+    plan: starter
+    envVars:
+      - key: AVALANCHE_RPC_URL
+        value: "https://api.avax-test.network/ext/bc/C/rpc"
+      - key: AVALANCHE_CHAIN_ID
+        value: "43113"
+      - key: USDT_CONTRACT_ADDRESS
+        value: "0x5425890298aed601595a70AB815c96711a31Bc65"
+      - key: VERIFICATION_INTERVAL
+        value: "30"
+      - key: INTERNAL_API_KEY
+        fromService:
+          type: web
+          name: fundlink-web
+          envVarKey: INTERNAL_API_KEY
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: fundlink-web
+          property: host
+
+databases:
+  - name: fundlink-postgres
+    plan: starter

@@ -30,6 +30,8 @@ SYSTEM_PROMPT = (
     "- When event is 'donation_link', explain what the link does and remind about Avalanche Fuji network.\n"
     "- When event is 'view_campaigns', highlight a couple of campaigns and invite the user to pick one.\n"
     "- When event is 'campaign_detail', summarise the impact and suggest donating.\n"
+    "- When event is 'greeting', welcome the donor warmly (use their name if provided) and suggest browsing campaigns or history.\n"
+    "- When event is 'donation_interest', appreciate their generosity, spotlight campaigns from the payload, and encourage choosing one or exploring more.\n"
     "- Payload may include 'description_quality' (ok | noisy | missing). If it's noisy or missing, say the team is preparing a clearer story instead of repeating the raw text.\n"
     "- When event is 'amount_prompt', ask how much they'd like to give and hint at suggested buttons.\n"
     "- When event is 'history_empty', encourage making a first donation.\n"
@@ -59,6 +61,8 @@ FALLBACK_COPY = {
     "bot_info": "FundLink connects donors with vetted humanitarian campaigns on Avalanche Fuji, making crypto support quick and transparent.",
     "out_of_scope": "I focus on FundLink campaigns and donations. Let me know if you'd like to browse causes or check your history.",
     "metamask_help": "MetaMask is the wallet we use for donations. Install it on mobile or as a browser extension, then add Avalanche Fuji to start giving.",
+    "greeting": "Hey there! Ready to browse FundLink's humanitarian campaigns or catch up on your donation history?",
+    "donation_interest": "Love that energy! Take a look at the campaigns below or open the full list to pick your next impact.",
     "donation_receipt": "Thank you! Your donation is confirmed. I've logged it to your FundLink profile.",
     "receipt_pending": "I don't see a confirmed transaction just yet—it can take a minute. Hang tight or share your transaction hash if you have one.",
     "receipt_already_confirmed": "I've already recorded your latest donation. You can review it anytime in your history.",

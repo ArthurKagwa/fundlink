@@ -1,0 +1,42 @@
+# Railway deployment configuration for individual services
+
+# Web Service
+web:
+  build:
+    builder: NIXPACKS
+  startCommand: "cd fundlink_web && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:$PORT --workers 3 fundlink_backend.wsgi:application"
+  healthcheckPath: "/"
+  healthcheckTimeout: 100
+  restartPolicyType: "ON_FAILURE"
+  restartPolicyMaxRetries: 10
+  variables:
+    DEBUG: false
+    ALLOWED_HOSTS: "*"
+    AVALANCHE_RPC_URL: "https://api.avax-test.network/ext/bc/C/rpc"
+    AVALANCHE_CHAIN_ID: "43113"
+    USDT_CONTRACT_ADDRESS: "0x5425890298aed601595a70AB815c96711a31Bc65"
+
+# Bot Service
+bot:
+  build:
+    builder: NIXPACKS
+  startCommand: "cd telbot_llm && python run_bot.py"
+  restartPolicyType: "ON_FAILURE"
+  restartPolicyMaxRetries: 10
+  variables:
+    TOGETHER_MODEL: "meta-llama/Llama-3.2-3B-Instruct-Turbo"
+    LOG_LEVEL: "INFO"
+
+# Verifier Service  
+verifier:
+  build:
+    builder: NIXPACKS
+  startCommand: "cd donation_verifier && python main.py"
+  restartPolicyType: "ON_FAILURE"
+  restartPolicyMaxRetries: 10
+  variables:
+    AVALANCHE_RPC_URL: "https://api.avax-test.network/ext/bc/C/rpc"
+    AVALANCHE_CHAIN_ID: "43113"
+    USDT_CONTRACT_ADDRESS: "0x5425890298aed601595a70AB815c96711a31Bc65"
+    VERIFICATION_INTERVAL: "30"
+    LOG_LEVEL: "INFO"

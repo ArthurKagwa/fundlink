@@ -18,6 +18,8 @@ VALID_INTENTS = {
     "HISTORY",
     "HELP",
     "CONFIRM_DONATION",
+    "GREETING",
+    "DONATION_INTEREST",
     "UNKNOWN",
 }
 
@@ -31,7 +33,7 @@ INTENT_SYSTEM_PROMPT = (
     "Rules:\n"
     "- Respond with STRICT JSON only (no prose).\n"
     "- Schema: {\"intent\": str, \"entities\": object, \"confidence\": float}.\n"
-    "- Valid intents: VIEW_CAMPAIGNS, SELECT_CAMPAIGN, DONATE, HISTORY, HELP, CONFIRM_DONATION, UNKNOWN.\n"
+    "- Valid intents: VIEW_CAMPAIGNS, SELECT_CAMPAIGN, DONATE, HISTORY, HELP, CONFIRM_DONATION, GREETING, DONATION_INTEREST, UNKNOWN.\n"
     "- Entities may include campaign_id (int), campaign_title (str), amount (float), token ('AVAX'|'USDT').\n"
     "- Use token uppercase. If token unspecified, omit it.\n"
     "- Confidence must be 0.0–1.0. If unsure < 0.6, return intent UNKNOWN with empty entities.\n"
@@ -100,6 +102,28 @@ FEW_SHOTS = [
                 "intent": "CONFIRM_DONATION",
                 "entities": {},
                 "confidence": 0.9,
+            }
+        ),
+    },
+    {"role": "user", "content": "hi there"},
+    {
+        "role": "assistant",
+        "content": json.dumps(
+            {
+                "intent": "GREETING",
+                "entities": {},
+                "confidence": 0.82,
+            }
+        ),
+    },
+    {"role": "user", "content": "i'm feeling generous today"},
+    {
+        "role": "assistant",
+        "content": json.dumps(
+            {
+                "intent": "DONATION_INTEREST",
+                "entities": {},
+                "confidence": 0.86,
             }
         ),
     },
@@ -191,6 +215,55 @@ async def classify_intent(
             if SequenceMatcher(None, tok, target).ratio() >= ratio:
                 return True
         return False
+
+    greeting_keywords = ["hi", "hello", "hey", "hiya", "howdy", "heya", "greetings", "hola"]
+    greeting_match = any(_token_like(keyword, 0.75 if len(keyword) > 3 else 1.0) for keyword in greeting_keywords)
+    disqualify_tokens = {
+        "donate",
+        "donation",
+        "campaign",
+        "campaigns",
+        "history",
+        "help",
+        "show",
+        "view",
+        "support",
+    }
+    if greeting_match:
+        if len(tokens) <= 4 or not any(tok in disqualify_tokens for tok in tokens):
+            return IntentPrediction(
+                intent="GREETING",
+                entities={},
+                confidence=0.9,
+                raw={"intent": "GREETING", "entities": {}, "heuristic": "greeting"},
+            )
+
+    generosity_phrases = [
+        "feeling generous",
+        "feelin generous",
+        "feeling charitable",
+        "in a giving mood",
+        "give back",
+        "ready to give",
+        "ready to donate",
+        "keen to donate",
+        "keen to give",
+        "want to give back",
+        "want to help out",
+    ]
+    has_generous_word = "generous" in lowered or any(_token_like(word) for word in ["generous", "charitable", "giving"])
+    has_feel_word = any(_token_like(word) for word in ["feel", "feeling", "felt"])
+    has_ready_word = any(_token_like(word) for word in ["ready", "down", "keen"])
+    has_support_word = any(_token_like(word) for word in ["give", "giving", "donate", "help", "support"])
+    if any(phrase in lowered for phrase in generosity_phrases) or (
+        has_generous_word and (has_feel_word or has_ready_word) and has_support_word
+    ):
+        return IntentPrediction(
+            intent="DONATION_INTEREST",
+            entities={},
+            confidence=0.85,
+            raw={"intent": "DONATION_INTEREST", "entities": {}, "heuristic": "donation_interest"},
+        )
 
     has_about = _token_like("about") or "about" in lowered
     has_question = any(_token_like(option) for option in ["what", "whats", "what's", "wat"])

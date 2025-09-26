@@ -1,93 +1,462 @@
 {% extends 'base.html' %}
 {% block title %}NGO Dashboard - FundLink{% endblock %}
 {% block content %}
-<h1>NGO Dashboard</h1>
-<p class="text-muted">Manage your organization and campaigns.</p>
-<div class="card" style="margin-bottom:1.5rem;">
-  <h3 style="margin-bottom:0.5rem;">Organization Status</h3>
-  <p><strong>Name:</strong> {{ ngo.name }}<br>
-     <strong>Email:</strong> {{ ngo.email }}<br>
-     <strong>Status:</strong> {{ ngo.status|title }} {% if ngo.status == 'rejected' and ngo.rejection_reason %}<span style="color:#b00;">(Reason: {{ ngo.rejection_reason }})</span>{% endif %}<br>
-     <strong>Wallet:</strong> {{ ngo.wallet_address }}
-  </p>
-  {% if ngo.status != 'approved' %}
-    <div class="alert alert-info">Your NGO is currently {{ ngo.status }}. You will gain full access once approved.</div>
+<div class="ngo-dashboard-container">
+  <div class="dashboard-header">
+    <h1>NGO Dashboard</h1>
+    <p class="text-muted">Manage your organization and track campaign performance</p>
+  </div>
+
+  <!-- Organization Status Card -->
+  <div class="card organization-status">
+    <h3>Organization Status</h3>
+    <div class="org-info">
+      <div class="info-row">
+        <strong>Name:</strong> {{ ngo.name }}
+      </div>
+      <div class="info-row">
+        <strong>Email:</strong> {{ ngo.email }}
+      </div>
+      <div class="info-row">
+        <strong>Status:</strong> 
+        <span class="status-badge status-{{ ngo.status }}">{{ ngo.status|title }}</span>
+        {% if ngo.status == 'rejected' and ngo.rejection_reason %}
+          <div class="rejection-reason">
+            <small class="text-danger">Reason: {{ ngo.rejection_reason }}</small>
+          </div>
+        {% endif %}
+      </div>
+      <div class="info-row">
+        <strong>Wallet:</strong> 
+        <code class="wallet-address">{{ ngo.wallet_address }}</code>
+        <button class="btn btn-sm btn-outline" onclick="copyWalletAddress()">
+          <i class="fas fa-copy"></i>
+        </button>
+      </div>
+    </div>
+    
+    {% if ngo.status != 'approved' %}
+      <div class="alert alert-info">
+        Your NGO is currently {{ ngo.status }}. You will gain full access once approved.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Performance Overview (for approved NGOs) -->
+  {% if ngo.status == 'approved' %}
+  <div class="performance-overview">
+    <h2>Performance Overview</h2>
+    <div id="performance-stats" class="stats-grid">
+      <div class="stat-card">
+        <h3 id="total-campaigns-stat">{{ ngo.total_campaigns }}</h3>
+        <p>Total Campaigns</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="active-campaigns-stat">{{ ngo.active_campaigns }}</h3>
+        <p>Active Campaigns</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="total-raised-stat">{{ ngo.total_donations_received|floatformat:3 }}</h3>
+        <p>Total Raised (AVAX/USDT)</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="total-donors-stat">{{ ngo.total_donors }}</h3>
+        <p>Unique Donors</p>
+      </div>
+    </div>
+  </div>
   {% endif %}
+
+  <!-- Campaign Creation Form (for approved NGOs) -->
+  {% if ngo.status == 'approved' %}
+  <div class="card campaign-creation">
+    <h3>Create New Campaign</h3>
+    <form id="create-campaign-form">
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label for="cc-title">Title</label>
+          <input id="cc-title" name="title" required maxlength="200" placeholder="Campaign title">
+        </div>
+        
+        <div class="form-group full-width">
+          <label for="cc-description">Description</label>
+          <textarea id="cc-description" name="description" rows="5" 
+                    placeholder="Describe the need, beneficiaries, and how funds will be used (min 50 chars)" 
+                    required></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label>Accepted Tokens</label>
+          <div class="token-options">
+            <label><input type="checkbox" name="token_options" value="AVAX" checked> AVAX</label>
+            <label><input type="checkbox" name="token_options" value="USDT"> USDT</label>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="cc-min">Minimum Amount</label>
+          <input id="cc-min" name="min_amount" type="number" step="0.000001" min="0" 
+                 placeholder="0.01" value="0.01">
+        </div>
+        
+        <div class="form-group">
+          <label for="cc-target">Target Amount (optional)</label>
+          <input id="cc-target" name="target_amount" type="number" step="0.000001" min="0" 
+                 placeholder="10">
+        </div>
+      </div>
+      
+      <div class="form-actions">
+        <button type="submit" class="btn btn-success">Create Campaign</button>
+        <span id="cc-status" class="form-status" style="display:none;"></span>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- Campaigns List with Progress Tracking -->
+  <div class="campaigns-section">
+    <h2>Your Campaigns</h2>
+    <div id="campaigns-container">
+      {% if campaigns %}
+        <div class="campaigns-grid" id="campaigns-grid">
+          {% for c in campaigns %}
+          <div class="campaign-card" data-campaign-id="{{ c.id }}">
+            <div class="campaign-header">
+              <h4>{{ c.title }}</h4>
+              <span class="status-badge status-{{ c.status }}">{{ c.status|title }}</span>
+            </div>
+            
+            {% if c.status == 'approved' and c.target_amount %}
+            <div class="campaign-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ c.progress_percentage|default:0 }}%">
+                  <span class="progress-text">{{ c.progress_percentage|default:0|floatformat:1 }}%</span>
+                </div>
+              </div>
+              <div class="progress-stats">
+                <span class="raised">{{ c.total_donations|floatformat:3 }} / {{ c.target_amount|floatformat:3 }}</span>
+                <span class="donors">{{ c.total_confirmations|default:0 }} donors</span>
+              </div>
+            </div>
+            {% endif %}
+            
+            <div class="campaign-metrics">
+              <div class="metric">
+                <span class="label">Total Raised:</span>
+                <span class="value">{{ c.total_donations|floatformat:3 }} AVAX/USDT</span>
+              </div>
+              <div class="metric">
+                <span class="label">Created:</span>
+                <span class="value">{{ c.created_at|date:'Y-m-d' }}</span>
+              </div>
+            </div>
+            
+            {% if c.status == 'rejected' and c.rejection_reason %}
+            <div class="rejection-reason">
+              <small class="text-danger">{{ c.rejection_reason }}</small>
+            </div>
+            {% endif %}
+            
+            <div class="campaign-actions">
+              {% if c.status == 'draft' or c.status == 'rejected' %}
+                <button class="btn btn-sm btn-outline" data-action="submit-campaign" data-id="{{ c.id }}">
+                  Submit for Review
+                </button>
+              {% elif c.status == 'submitted' %}
+                <span class="text-muted">Awaiting Review</span>
+              {% elif c.status == 'approved' %}
+                <a href="/campaigns/{{ c.id }}/" class="btn btn-sm btn-primary">View Public Page</a>
+                <span class="text-success">Live</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p class="text-muted">No campaigns yet.</p>
+          {% if ngo.status == 'approved' %}
+            <p>Create your first campaign using the form above.</p>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Real-time Updates -->
+  <div class="update-indicator">
+    <small class="text-muted">
+      <i class="fas fa-sync-alt" id="refresh-icon"></i>
+      Last updated: <span id="last-updated">Just now</span>
+    </small>
+  </div>
 </div>
 
-<h3>Your Campaigns</h3>
-{% if ngo.status == 'approved' %}
-<div class="card" style="margin:1rem 0;">
-  <h3 style="margin-bottom:0.5rem;">Create New Campaign</h3>
-  <form id="create-campaign-form">
-    <div style="margin-bottom:0.75rem;">
-      <label for="cc-title">Title</label>
-      <input id="cc-title" name="title" required maxlength="200" placeholder="Campaign title">
-    </div>
-    <div style="margin-bottom:0.75rem;">
-      <label for="cc-description">Description</label>
-      <textarea id="cc-description" name="description" rows="5" placeholder="Describe the need, beneficiaries, and how funds will be used (min 50 chars)" required></textarea>
-    </div>
-    <div style="margin-bottom:0.75rem;">
-      <label>Accepted Tokens</label>
-      <div style="margin-top:0.5rem;">
-        <label style="margin-right:1rem;"><input type="checkbox" name="token_options" value="AVAX" checked> AVAX</label>
-        <label style="margin-right:1rem;"><input type="checkbox" name="token_options" value="USDT"> USDT</label>
-      </div>
-    </div>
-    <div class="grid">
-      <div>
-        <label for="cc-min">Minimum Amount</label>
-        <input id="cc-min" name="min_amount" type="number" step="0.000001" min="0" placeholder="0.01" value="0.01">
-      </div>
-      <div>
-        <label for="cc-target">Target Amount (optional)</label>
-        <input id="cc-target" name="target_amount" type="number" step="0.000001" min="0" placeholder="10">
-      </div>
-    </div>
-    <div style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center;">
-      <button type="submit" class="btn">Create Campaign</button>
-      <span id="cc-status" class="text-muted" style="display:none;"></span>
-    </div>
-  </form>
-</div>
-{% endif %}
-<table style="width:100%; border-collapse:collapse;">
-  <thead>
-    <tr style="text-align:left; border-bottom:1px solid #ccc;">
-      <th style="padding:0.5rem;">Title</th>
-      <th style="padding:0.5rem;">Status</th>
-      <th style="padding:0.5rem;">Donations</th>
-      <th style="padding:0.5rem;">Created</th>
-      <th style="padding:0.5rem;">Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for c in campaigns %}
-    <tr style="border-bottom:1px solid #eee;">
-      <td style="padding:0.5rem;">{{ c.title }}</td>
-      <td style="padding:0.5rem;">{{ c.status|title }}{% if c.status == 'rejected' and c.rejection_reason %}<br><span style="color:#b00;font-size:0.8rem;">{{ c.rejection_reason }}</span>{% endif %}</td>
-      <td style="padding:0.5rem;">{{ c.total_donations }}</td>
-      <td style="padding:0.5rem;">{{ c.created_at|date:'Y-m-d' }}</td>
-      <td style="padding:0.5rem;">
-        {% if c.status == 'draft' or c.status == 'rejected' %}
-          {% if ngo.status == 'approved' %}
-            <button class="btn btn-outline" data-action="submit-campaign" data-id="{{ c.id }}">Submit for review</button>
-          {% else %}
-            <span class="text-muted">Waiting NGO approval</span>
-          {% endif %}
-        {% elif c.status == 'submitted' %}
-          <span class="text-muted">Awaiting review</span>
-        {% elif c.status == 'approved' %}
-          <span class="text-muted">Live</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="5" style="padding:0.75rem;">No campaigns yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<style>
+.ngo-dashboard-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.dashboard-header {
+  margin-bottom: 2rem;
+}
+
+.organization-status {
+  margin-bottom: 2rem;
+}
+
+.org-info {
+  display: grid;
+  gap: 1rem;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-submitted {
+  background-color: #fef9e7;
+  color: #f39c12;
+}
+
+.status-approved {
+  background-color: #d5f4e6;
+  color: #27ae60;
+}
+
+.status-rejected {
+  background-color: #fadbd8;
+  color: #e74c3c;
+}
+
+.wallet-address {
+  font-family: 'Courier New', monospace;
+  background-color: #f8f9fa;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.performance-overview {
+  margin: 2rem 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.stat-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-left: 4px solid #3498db;
+}
+
+.stat-card h3 {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.campaign-creation {
+  margin: 2rem 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.token-options {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.campaigns-section {
+  margin: 3rem 0;
+}
+
+.campaigns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.campaign-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-left: 4px solid #3498db;
+}
+
+.campaign-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.campaign-header h4 {
+  margin: 0;
+  flex: 1;
+}
+
+.campaign-progress {
+  margin: 1rem 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 20px;
+  background-color: #ecf0f1;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2980b9);
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+.campaign-metrics {
+  margin: 1rem 0;
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.metric .label {
+  color: #7f8c8d;
+}
+
+.metric .value {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.campaign-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.rejection-reason {
+  background-color: #fadbd8;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #7f8c8d;
+}
+
+.update-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.refreshing {
+  animation: spin 1s linear infinite;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .campaigns-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .campaign-header {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .campaign-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+}
+</style>
 
 <script>
 function getCookie(name) {
@@ -97,6 +466,141 @@ function getCookie(name) {
 }
 
 const csrftoken = getCookie('csrftoken');
+
+function copyWalletAddress() {
+  const walletAddress = '{{ ngo.wallet_address }}';
+  navigator.clipboard.writeText(walletAddress).then(() => {
+    // Show a temporary success message
+    const btn = event.target.closest('button');
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    btn.classList.add('btn-success');
+    setTimeout(() => {
+      btn.innerHTML = originalContent;
+      btn.classList.remove('btn-success');
+    }, 2000);
+  });
+}
+
+// Enhanced campaign creation
+document.getElementById('create-campaign-form')?.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const statusEl = document.getElementById('cc-status');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  
+  statusEl.style.display = 'inline';
+  statusEl.textContent = 'Creating campaign...';
+  statusEl.className = 'form-status text-info';
+  submitBtn.disabled = true;
+  
+  // Collect form data
+  const formData = new FormData(e.target);
+  const tokenOptions = [];
+  document.querySelectorAll('input[name="token_options"]:checked').forEach(cb => {
+    tokenOptions.push(cb.value);
+  });
+  
+  const data = {
+    title: formData.get('title'),
+    description: formData.get('description'),
+    token_options: tokenOptions,
+    min_amount: formData.get('min_amount'),
+    target_amount: formData.get('target_amount') || null,
+  };
+  
+  try {
+    const response = await fetch('/api/campaigns/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrftoken,
+      },
+      body: JSON.stringify(data),
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      statusEl.textContent = 'Campaign created successfully!';
+      statusEl.className = 'form-status text-success';
+      e.target.reset();
+      // Refresh the page to show the new campaign
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      throw new Error(result.detail || 'Failed to create campaign');
+    }
+  } catch (error) {
+    statusEl.textContent = 'Error: ' + error.message;
+    statusEl.className = 'form-status text-danger';
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+// Campaign submission
+document.addEventListener('click', async function(e) {
+  if (e.target.matches('[data-action="submit-campaign"]')) {
+    const campaignId = e.target.dataset.id;
+    const btn = e.target;
+    
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/submit/`, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrftoken,
+        },
+      });
+      
+      if (response.ok) {
+        btn.textContent = 'Submitted';
+        btn.classList.remove('btn-outline');
+        btn.classList.add('btn-success');
+        // Refresh after a short delay
+        setTimeout(() => location.reload(), 2000);
+      } else {
+        throw new Error('Failed to submit campaign');
+      }
+    } catch (error) {
+      btn.textContent = 'Error';
+      btn.classList.add('btn-danger');
+      console.error('Error submitting campaign:', error);
+    }
+  }
+});
+
+// Auto-refresh performance stats
+async function updatePerformanceStats() {
+  try {
+    const response = await fetch('/api/ngos/{{ ngo.id }}/dashboard/');
+    if (response.ok) {
+      const data = await response.json();
+      const stats = data.ngo_dashboard_stats;
+      
+      if (document.getElementById('total-campaigns-stat')) {
+        document.getElementById('total-campaigns-stat').textContent = stats.total_campaigns;
+        document.getElementById('active-campaigns-stat').textContent = stats.active_campaigns;
+        document.getElementById('total-raised-stat').textContent = stats.total_raised.toFixed(3);
+        document.getElementById('total-donors-stat').textContent = stats.total_donors;
+      }
+      
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+    }
+  } catch (error) {
+    console.error('Error updating stats:', error);
+  }
+}
+
+// Initialize auto-refresh
+{% if ngo.status == 'approved' %}
+setInterval(updatePerformanceStats, 30000); // Update every 30 seconds
+{% endif %}
+</script>
+
+{% endblock %}
 
 const createForm = document.getElementById('create-campaign-form');
 if (createForm) {

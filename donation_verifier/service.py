@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+try:
+    from web3.middleware import geth_poa_middleware
+except ImportError:
+    # For newer web3 versions
+    from web3.middleware import ExtraDataToPOAMiddleware as geth_poa_middleware
 
 from .backend import BackendClient
 from .config import VerifierSettings
@@ -54,7 +58,7 @@ class DonationVerifier:
 
         self.web3 = Web3(Web3.HTTPProvider(settings.rpc_url))
         self.web3.middleware_onion.inject(geth_poa_middleware, layer=0)
-        self.backend = BackendClient(settings.backend_url, settings.internal_api_key)
+        self.backend = BackendClient(settings.backend_url, settings.internal_api_key, bot_notify_secret=settings.bot_notify_secret)
         self.state_path = settings.state_path
         self.state = self._load_state()
         self.usdt_contract = None
@@ -161,30 +165,30 @@ class DonationVerifier:
         self.logger.debug('Scanning AVAX transfers from block %s to %s', start_block + 1, end_block)
 
         for block_number in range(start_block + 1, end_block + 1):
-        block = self.web3.eth.get_block(block_number, full_transactions=True)
-        block_ts = datetime.fromtimestamp(block['timestamp'], tz=timezone.utc)
-        for tx in block['transactions']:
-            to_addr = tx.get('to')
-            if not to_addr:
-                continue
-            wallet = to_addr.lower()
-            match = self._match_intent(lookup, wallet, 'AVAX', int(tx.get('value', 0)))
-            if not match:
-                continue
+            block = self.web3.eth.get_block(block_number, full_transactions=True)
+            block_ts = datetime.fromtimestamp(block['timestamp'], tz=timezone.utc)
+            for tx in block['transactions']:
+                to_addr = tx.get('to')
+                if not to_addr:
+                    continue
+                wallet = to_addr.lower()
+                match = self._match_intent(lookup, wallet, 'AVAX', int(tx.get('value', 0)))
+                if not match:
+                    continue
 
-            receipt = self.web3.eth.get_transaction_receipt(tx['hash'])
-            if receipt.status != 1:
-                self.logger.info('Tx %s failed; skipping', tx['hash'].hex())
-                continue
+                receipt = self.web3.eth.get_transaction_receipt(tx['hash'])
+                if receipt.status != 1:
+                    self.logger.info('Tx %s failed; skipping', tx['hash'].hex())
+                    continue
 
-            tx_hash_hex = tx['hash'].hex()
-            payload = {
-                'tx_hash': tx_hash_hex,
-                'chain_id': self.settings.chain_id,
-                'token': 'AVAX',
-                'value_base_units': str(int(tx['value'])),
-                'from_address': tx['from'].lower(),
-                'to_address': wallet,
+                tx_hash_hex = tx['hash'].hex()
+                payload = {
+                    'tx_hash': tx_hash_hex,
+                    'chain_id': self.settings.chain_id,
+                    'token': 'AVAX',
+                    'value_base_units': str(int(tx['value'])),
+                    'from_address': tx['from'].lower(),
+                    'to_address': wallet,
                     'block_number': block_number,
                     'timestamp': block_ts.isoformat(),
                     'intent_reference': match.reference,
@@ -207,8 +211,8 @@ class DonationVerifier:
 
         logs = self.web3.eth.get_logs(
             {
-                'fromBlock': start_block + 1,
-                'toBlock': end_block,
+                'fromBlock': hex(start_block + 1),
+                'toBlock': hex(end_block),
                 'address': self.usdt_contract.address,
                 'topics': [TRANSFER_TOPIC],
             }
@@ -245,6 +249,28 @@ class DonationVerifier:
             result = self.backend.confirm_donation(payload)
             donation = result.get('donation') if isinstance(result, dict) else result
             self.logger.info('Confirmed donation via intent %s for tx %s', intent.reference, payload['tx_hash'])
+            
+            # Send Telegram notification to donor
+            if donation and isinstance(donation, dict):
+                telegram_id = donation.get('donor_telegram_id')
+                if telegram_id:
+                    try:
+                        message_data = {
+                            'tx_hash': payload['tx_hash'],
+                            'amount': donation.get('amount_decimal'),
+                            'token': donation.get('token'),
+                            'ngo_name': donation.get('ngo', {}).get('name'),
+                            'explorer_url': donation.get('explorer_url')
+                        }
+                        notify_result = self.backend.send_notification(
+                            telegram_id=telegram_id,
+                            message_type='donation_receipt',
+                            message_data=message_data
+                        )
+                        self.logger.info('Sent Telegram receipt to user %s: %s', telegram_id, notify_result.get('message'))
+                    except Exception as notify_exc:
+                        self.logger.error('Failed to send Telegram notification to user %s: %s', telegram_id, notify_exc)
+            
             if donation:
                 self.logger.debug('Donation payload: %s', donation)
         except Exception as exc:

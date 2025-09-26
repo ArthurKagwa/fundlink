@@ -49,6 +49,12 @@ async def handle_intent(
 ) -> AgentResponse:
     intent = intent.upper()
 
+    if intent == "GREETING":
+        return await greeting_menu(user_state)
+
+    if intent == "DONATION_INTEREST":
+        return await donation_interest_menu(user_state)
+
     if intent == "VIEW_CAMPAIGNS":
         return await view_campaigns(user_state)
 
@@ -79,7 +85,131 @@ async def handle_intent(
             return await out_of_scope(user_state)
         return await help_menu(user_state)
 
+    if intent == "DONATION_EXPIRED":
+        return await handle_expired_donation(user_state)
+
     return await unknown_menu(user_state)
+
+
+async def greeting_menu(user_state: Dict[str, Any]) -> AgentResponse:
+    state = user_state if user_state is not None else {}
+    profile = state.get("profile") or {}
+    first_name = profile.get("first_name") or profile.get("username") or ""
+
+    campaigns = await _fetch_campaigns()
+    curated: List[Dict[str, Any]] = []
+    for campaign in campaigns[:3]:
+        if not isinstance(campaign, dict):
+            continue
+        cid = campaign.get("id")
+        if not cid:
+            continue
+        curated.append(
+            {
+                "id": cid,
+                "title": campaign.get("title") or "Campaign",
+                "ngo_name": campaign.get("ngo_name") or "",
+                "min_amount": str(campaign.get("min_amount") or ""),
+            }
+        )
+
+    state["last_shown_campaigns"] = [
+        {
+            "id": c.get("id"),
+            "title": c.get("title", ""),
+            "ngo_name": c.get("ngo_name", ""),
+        }
+        for c in campaigns[:10]
+        if isinstance(c, dict) and c.get("id")
+    ]
+    state["conversation_context"] = "greeting"
+
+    # Create enhanced greeting with tracking explanation
+    name_part = f"Hello {first_name}! " if first_name else "Welcome! "
+    greeting_text = (
+        f"{name_part}🌟\n\n"
+        
+        "I help you make secure, trackable donations to verified NGOs on Avalanche Fuji testnet.\n\n"
+        
+        "**🔍 How It Works:**\n"
+        "• Browse verified humanitarian campaigns\n"
+        "• Get personalized donation links (30-minute tracking window)\n"
+        "• Complete donations through MetaMask\n"
+        "• Receive confirmation receipts and impact updates\n\n"
+        
+        "**🎯 Featured Campaigns:**"
+    )
+    
+    buttons: List[List[ButtonSpec]] = []
+    for item in curated[:2]:
+        title = item.get("title") or "Campaign"
+        ngo_name = item.get("ngo_name") or ""
+        label = f"✨ {title}" if not ngo_name else f"✨ {title} — {ngo_name}"
+        buttons.append([ButtonSpec(text=label, callback={"a": "sel", "c": item["id"]})])
+    buttons.append([ButtonSpec(text="📜 Browse All Campaigns", callback={"a": "campaigns"})])
+    buttons.append([ButtonSpec(text="📋 My Donation History", callback={"a": "history"})])
+
+    message = AgentMessage(
+        text=greeting_text,
+        parse_mode="Markdown",
+        buttons=buttons,
+    )
+    return AgentResponse(messages=[message])
+
+
+async def donation_interest_menu(user_state: Dict[str, Any]) -> AgentResponse:
+    state = user_state if user_state is not None else {}
+    preferred_token = state.get("pending_token") or state.get("last_used_token") or "AVAX"
+
+    campaigns = await _fetch_campaigns()
+    curated: List[Dict[str, Any]] = []
+    for campaign in campaigns[:3]:
+        if not isinstance(campaign, dict):
+            continue
+        cid = campaign.get("id")
+        if not cid:
+            continue
+        curated.append(
+            {
+                "id": cid,
+                "title": campaign.get("title") or "Campaign",
+                "ngo_name": campaign.get("ngo_name") or "",
+                "min_amount": str(campaign.get("min_amount") or ""),
+            }
+        )
+
+    state["last_shown_campaigns"] = [
+        {
+            "id": c.get("id"),
+            "title": c.get("title", ""),
+            "ngo_name": c.get("ngo_name", ""),
+        }
+        for c in campaigns[:10]
+        if isinstance(c, dict) and c.get("id")
+    ]
+    state["conversation_context"] = "donation_interest"
+
+    payload = {
+        "token": preferred_token,
+        "campaigns": curated,
+    }
+
+    generated = await generate_message("donation_interest", payload, state)
+
+    buttons: List[List[ButtonSpec]] = []
+    for item in curated[:2]:
+        title = item.get("title") or "Campaign"
+        label = f"💝 Support {title}"
+        buttons.append([ButtonSpec(text=label, callback={"a": "sel", "c": item["id"]})])
+    buttons.append([ButtonSpec(text="📜 View Campaigns", callback={"a": "campaigns"})])
+    buttons.append([ButtonSpec(text="🧾 Donation History", callback={"a": "history"})])
+
+    message = AgentMessage(
+        text=generated.text,
+        parse_mode=generated.parse_mode,
+        buttons=buttons,
+    )
+    return AgentResponse(messages=[message])
 
 
 async def view_campaigns(user_state: Dict[str, Any]) -> AgentResponse:
@@ -265,30 +395,74 @@ async def donate_flow(user_state: Dict[str, Any], entities: Dict[str, Any], tele
         "telegram_last_name": profile.get("last_name"),
     }
 
+    final_amount = amount
+    was_adjusted = False
+    
     try:
         intent_response = await call_django_api("create_donation_intent", intent_payload)
         if isinstance(intent_response, dict):
             user_state["last_donation_intent_reference"] = intent_response.get("reference")
+            
+            # Check if amount was adjusted for uniqueness
+            if intent_response.get("adjusted_for_uniqueness"):
+                final_amount_str = intent_response.get("amount_decimal", str(amount))
+                final_amount = float(final_amount_str)
+                was_adjusted = True
+                
+                # Regenerate deep link with adjusted amount
+                token_cfg = TOKEN_CONFIG[token]
+                deep_link = make_metamask_deep_link(
+                    address=wallet_address,
+                    amount=final_amount,
+                    token=token_cfg["token"],
+                    decimals=token_cfg["decimals"],
+                )
+                
     except BackendAPIError:
         # Intent registration failing should not block donation flow; proceed without storing reference
         pass
 
     campaign_title = campaign.get("title", "this campaign")
-    generated = await generate_message(
-        "donation_link",
-        {
-            "amount": str(amount),
-            "token": token,
-            "title": campaign_title,
-        },
-        user_state,
+    
+    # Create enhanced message with tracking timeout explanation
+    amount_display = f"{final_amount} {token}"
+    if was_adjusted:
+        amount_display = f"{final_amount} {token} (adjusted from {amount})"
+    
+    timeout_explanation = (
+        f"💰 **Ready to donate {amount_display}**\n"
+        f"📋 **Campaign**: {campaign_title}\n\n"
+        
+        "⏰ **Important - 30 Minute Tracking Window**\n"
+        "Your donation link is active for 30 minutes to ensure proper tracking:\n"
+        "• We need to match your transaction to your Telegram account\n"
+        "• This prevents donation mix-ups with other users\n"
+        "• You'll receive a confirmation receipt after donation\n"
+        "• If the link expires, simply request a new one\n\n"
+        
+        "🔐 **Why This Matters**\n"
+        "• Ensures your donation is properly credited\n"
+        "• Allows us to send you impact updates\n"
+        "• Helps NGOs track supporter engagement\n"
+        "• Prevents lost or untracked donations\n\n"
     )
+    
+    if was_adjusted:
+        timeout_explanation += (
+            "ℹ️ **Amount Slightly Adjusted**\n"
+            "We added a tiny amount (a few wei) to ensure your donation\n"
+            "is uniquely trackable and doesn't get mixed up with others.\n\n"
+        )
+    
+    timeout_explanation += "🦊 **Ready to donate? Click below:**"
+    
     buttons = [
         [ButtonSpec(text="🦊 Donate with MetaMask", url=deep_link["deep_link"]),],
         [ButtonSpec(text="⬇️ Install MetaMask", callback={"a": "mmhelp"})],
         [ButtonSpec(text="➕ Add Avalanche Fuji", url="https://metamask.app.link/dapp/chainlist.org/chain/43113")],
     ]
-    message = AgentMessage(text=generated.text, parse_mode=generated.parse_mode, buttons=buttons)
+    
+    message = AgentMessage(text=timeout_explanation, parse_mode="Markdown", buttons=buttons)
     return AgentResponse(messages=[message], clear_state=True)
 
 
@@ -414,16 +588,76 @@ async def confirm_donation(telegram_id: str, user_state: Dict[str, Any]) -> Agen
 
 
 async def help_menu(user_state: Optional[Dict[str, Any]] = None) -> AgentResponse:
-    generated = await generate_message("help", {}, user_state)
+    help_text = (
+        "🤖 **FundLink Donation Bot Help**\n\n"
+        
+        "I help you make secure, trackable donations to verified NGOs on Avalanche Fuji testnet.\n\n"
+        
+        "**🔍 How to Donate:**\n"
+        "1. Browse campaigns with 'View Campaigns'\n"
+        "2. Select a campaign and donation amount\n"
+        "3. Get your personalized MetaMask link\n"
+        "4. Complete the donation within 30 minutes\n"
+        "5. Receive confirmation and impact updates\n\n"
+        
+        "**⏰ Why 30-minute timeout?**\n"
+        "• Prevents donation mix-ups between users\n"
+        "• Ensures accurate tracking and receipts\n"
+        "• Keeps our system secure and reliable\n"
+        "• Expired? Just request a new link!\n\n"
+        
+        "**🦊 Need MetaMask?**\n"
+        "• Download from metamask.io\n"
+        "• Add Avalanche Fuji testnet\n"
+        "• Get test AVAX from faucet.avax.network\n\n"
+        
+        "**❓ Questions?** Use the buttons below!"
+    )
+    
     message = AgentMessage(
-        text=generated.text,
-        parse_mode=generated.parse_mode,
+        text=help_text,
+        parse_mode="Markdown",
         buttons=[
             [ButtonSpec(text="📜 View Campaigns", callback={"a": "campaigns"})],
             [ButtonSpec(text="📋 My Donation History", callback={"a": "history"})],
+            [ButtonSpec(text="🦊 MetaMask Help", callback={"a": "mmhelp"})],
         ],
     )
     return AgentResponse(messages=[message])
+
+
+async def handle_expired_donation(user_state: Dict[str, Any]) -> AgentResponse:
+    """Handle when user tries to use an expired donation link"""
+    
+    expired_message = (
+        "⏰ **Donation Link Expired**\n\n"
+        
+        "Your donation tracking link has expired after 30 minutes.\n\n"
+        
+        "**Why do links expire?**\n"
+        "• Prevents donation mix-ups between users\n"
+        "• Ensures accurate tracking and receipts\n"
+        "• Keeps our system secure and reliable\n"
+        "• Allows proper impact reporting\n\n"
+        
+        "**What happens now?**\n"
+        "• Your previous link is no longer active\n"
+        "• No charges were made to your wallet\n"
+        "• You can request a new donation link\n"
+        "• The new link will be valid for 30 minutes\n\n"
+        
+        "🔄 **Ready to get a new link?**\n"
+        "Choose 'View Campaigns' below to start fresh!"
+    )
+    
+    buttons = [
+        [ButtonSpec(text="📋 View Campaigns", callback={"a": "campaigns"})],
+        [ButtonSpec(text="❓ Help", callback={"a": "help"})],
+    ]
+    
+    return AgentResponse(
+        messages=[AgentMessage(text=expired_message, parse_mode="Markdown", buttons=buttons)]
+    )
 
 
 async def unknown_menu(user_state: Optional[Dict[str, Any]] = None) -> AgentResponse:
@@ -722,4 +956,7 @@ __all__ = [
     "bot_info",
     "out_of_scope",
     "metamask_help",
+    "greeting_menu",
+    "donation_interest_menu",
+    "handle_expired_donation",
 ]

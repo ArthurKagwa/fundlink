@@ -10,13 +10,33 @@ class CampaignSerializer(serializers.ModelSerializer):
     total_donations = serializers.ReadOnlyField()
     status = serializers.CharField(read_only=True)
     rejection_reason = serializers.CharField(read_only=True)
+    funding_progress = serializers.ReadOnlyField()
 
     class Meta:
         model = Campaign
         fields = [
             'id', 'ngo', 'ngo_name', 'title', 'description', 'token_options',
             'min_amount', 'target_amount', 'status', 'rejection_reason',
-            'is_live', 'total_donations', 'created_at'
+            'is_live', 'total_donations', 'funding_progress', 'created_at'
+        ]
+
+
+class CampaignProgressSerializer(serializers.ModelSerializer):
+    """Detailed progress tracking serializer for dashboard"""
+    ngo_name = serializers.CharField(source='ngo.name', read_only=True)
+    funding_progress = serializers.ReadOnlyField()
+    total_intents = serializers.ReadOnlyField()
+    total_confirmations = serializers.ReadOnlyField()
+    intent_to_confirmation_ratio = serializers.ReadOnlyField()
+    progress_percentage = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Campaign
+        fields = [
+            'id', 'ngo_name', 'title', 'description', 'target_amount', 
+            'funding_progress', 'total_intents', 'total_confirmations',
+            'intent_to_confirmation_ratio', 'progress_percentage',
+            'status', 'created_at'
         ]
 
 

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}About - FundLink{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <h1 class="display-4 fw-bold text-center mb-5">About FundLink</h1>
+            
+            <div class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h4 text-primary mb-3">Our Mission</h2>
+                    <p class="lead">
+                        FundLink revolutionizes humanitarian donations by leveraging blockchain technology 
+                        to ensure complete transparency, instant transfers, and maximum impact for your charitable giving.
+                    </p>
+                    <p>
+                        Built on the Avalanche Fuji testnet, FundLink provides a secure, fast, and transparent 
+                        platform where donors can support verified NGOs with cryptocurrency donations while 
+                        tracking the real-world impact of their contributions.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h4 text-primary mb-3">How It Works</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-shield-check text-success me-2"></i>Verified NGOs</h5>
+                            <p class="text-muted">
+                                All NGOs undergo a thorough verification process to ensure legitimacy 
+                                and proper registration for humanitarian work.
+                            </p>
+                            
+                            <h5><i class="fas fa-coins text-warning me-2"></i>Crypto Donations</h5>
+                            <p class="text-muted">
+                                Support causes using AVAX or USDT on the Avalanche network for 
+                                fast, low-cost transactions.
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-chart-line text-info me-2"></i>Impact Tracking</h5>
+                            <p class="text-muted">
+                                Follow your donations from transaction to impact with regular 
+                                updates from NGOs on their progress and achievements.
+                            </p>
+                            
+                            <h5><i class="fas fa-eye text-primary me-2"></i>Full Transparency</h5>
+                            <p class="text-muted">
+                                Every donation is recorded on the blockchain, making all 
+                                transactions publicly verifiable and transparent.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

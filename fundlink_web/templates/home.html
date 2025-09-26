@@ -50,7 +50,7 @@ fetch('/api/campaigns/?limit=3')
                     <h3>${campaign.title}</h3>
                     <p class="text-muted">${campaign.description.substring(0, 100)}...</p>
                     <p><strong>Target:</strong> ${campaign.target_amount} ${campaign.token_options[0]}</p>
-                    <a href="/campaigns/${campaign.id}/" class="btn">Learn More</a>
+                    <a href="/campaigns/${campaign.id}/" class="btn">Donate</a>
                 </div>
             `).join('');
         } else {
@@ -107,14 +107,14 @@ fetch('/api/campaigns/?limit=3')
 </section>
 
 <!-- CTA Section -->
-<section class="py-5 bg-primary text-white">
+<section class="py-5 bg-dark text-white">
     <div class="container">
         <div class="row text-center">
             <div class="col-12">
                 <h2 class="fw-bold mb-3">Ready to Make an Impact?</h2>
                 <p class="lead mb-4">Join thousands of donors using blockchain technology for transparent giving</p>
                 <div class="d-flex justify-content-center gap-3">
-                    <a href="#" class="btn btn-light btn-lg">
+                    <a href="https://t.me/fundLink_bot" class="btn btn-light btn-lg" target="_blank">
                         <i class="fab fa-telegram me-2"></i>Start on Telegram
                     </a>
                     <a href="{% url 'main:campaigns_list' %}" class="btn btn-outline-light btn-lg">
@@ -146,11 +146,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <small class="text-success">
                                         <i class="fas fa-check-circle me-1"></i>${campaign.ngo_name}
                                     </small>
-                                    <span class="badge bg-primary">${campaign.token_options.join(', ')}</span>
+                                    <span class="badge bg-success">${campaign.token_options.join(', ')}</span>
                                 </div>
                             </div>
                             <div class="card-footer">
-                                <a href="/campaigns/${campaign.id}/" class="btn btn-primary btn-sm">
+                                <a href="/campaigns/${campaign.id}/" class="btn btn-success btn-sm">
                                     Donate Now <i class="fas fa-external-link-alt ms-1"></i>
                                 </a>
                             </div>

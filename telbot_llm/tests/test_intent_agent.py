@@ -112,3 +112,23 @@ async def test_confirm_donation_heuristic(monkeypatch):
 
     assert result.intent == "CONFIRM_DONATION"
     assert result.entities == {}
+
+
+@pytest.mark.asyncio
+async def test_greeting_intent(monkeypatch):
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("hi")
+
+    assert result.intent == "GREETING"
+    assert result.entities == {}
+
+
+@pytest.mark.asyncio
+async def test_donation_interest_intent(monkeypatch):
+    monkeypatch.setattr("telbot_llm.intent_agent.complete", AsyncMock(side_effect=AssertionError("should not call")))
+
+    result = await classify_intent("I'm feeling generous today")
+
+    assert result.intent == "DONATION_INTEREST"
+    assert result.entities == {}

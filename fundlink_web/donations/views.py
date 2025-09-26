@@ -1,4 +1,5 @@
 import hmac
+import logging
 from datetime import timedelta, datetime
 from decimal import Decimal
 
@@ -20,6 +21,8 @@ from .serializers import (
     BotUserSerializer,
     DonationIntentSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DonationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -145,13 +148,52 @@ def create_donation_intent(request):
         return Response({'error': 'amount_decimal must be numeric'}, status=status.HTTP_400_BAD_REQUEST)
 
     token_decimals = 18 if token == 'AVAX' else 6
+    
+    # Calculate base value in smallest units
     if value_base_units is None:
-        quant = (amount_decimal * (Decimal(10) ** token_decimals)).to_integral_value()
+        base_value = int((amount_decimal * (Decimal(10) ** token_decimals)).to_integral_value())
     else:
         try:
-            quant = Decimal(str(value_base_units))
+            base_value = int(Decimal(str(value_base_units)))
         except Exception:
             return Response({'error': 'value_base_units must be numeric'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Collision detection: Check for existing intents with same (ngo_wallet, token, value) and increment if needed
+    collision_count = 0
+    max_attempts = 1000  # Safety limit
+    
+    logger.info(f"Checking for intent collisions: NGO={ngo.name}, token={token}, base_value={base_value}")
+    
+    while collision_count < max_attempts:
+        adjusted_value = base_value + collision_count
+        
+        # Check if this exact combination exists in pending intents
+        existing_intent = DonationIntent.objects.filter(
+            ngo__wallet_address__iexact=wallet_address,
+            token=token,
+            value_base_units=adjusted_value,
+            status='pending',
+            created_at__gt=timezone.now() - timedelta(minutes=30)  # Only check recent intents
+        ).first()
+        
+        if not existing_intent:
+            # No collision found, use this value
+            final_value = adjusted_value
+            logger.info(f"Unique value found after {collision_count} attempts: {final_value}")
+            break
+        
+        collision_count += 1
+    
+    if collision_count >= max_attempts:
+        logger.error(f"Too many intent collisions for NGO {ngo.name}")
+        return Response(
+            {'error': 'Too many concurrent donation intents, please try again in a moment'}, 
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+    
+    # Calculate final decimal amount (may be slightly different due to collision avoidance)
+    final_amount_decimal = Decimal(final_value) / (Decimal(10) ** token_decimals)
+    quant = final_value
 
     bot_user = None
     donor_id_int = None
@@ -177,7 +219,7 @@ def create_donation_intent(request):
         campaign=campaign,
         token=token,
         token_decimals=token_decimals,
-        amount_decimal=amount_decimal,
+        amount_decimal=final_amount_decimal,
         value_base_units=quant,
         wallet_address=wallet_address,
         donor_telegram_id=donor_id_int,
@@ -189,6 +231,10 @@ def create_donation_intent(request):
     return Response({
         'reference': intent.reference,
         'expires_at': intent.expires_at.isoformat() if intent.expires_at else None,
+        'amount_decimal': str(final_amount_decimal),
+        'value_base_units': str(quant),
+        'original_amount': str(amount_decimal),
+        'adjusted_for_uniqueness': collision_count > 0,
         'intent': serializer.data,
     }, status=status.HTTP_201_CREATED)
 

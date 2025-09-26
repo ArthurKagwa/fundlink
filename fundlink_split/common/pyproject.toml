@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fundlink-common"
+version = "0.1.0"
+description = "Shared contracts and service utilities for FundLink services."
+readme = "README.md"
+authors = [{name = "FundLink", email = "engineering@fundlink.example"}]
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "httpx>=0.26",
+    "pydantic>=1.10,<2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["common"]

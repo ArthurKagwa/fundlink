@@ -10,9 +10,36 @@ class NGOSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = NGO
-    fields = ['id', 'name', 'email', 'wallet_address', 'website', 'docs_url',
-          'description', 'approved', 'status', 'rejection_reason', 'is_active', 'created_at']
-    read_only_fields = ['approved', 'status', 'rejection_reason', 'created_at']
+        fields = ['id', 'name', 'email', 'wallet_address', 'website', 'docs_url',
+              'description', 'approved', 'status', 'rejection_reason', 'is_active', 'created_at']
+        read_only_fields = ['approved', 'status', 'rejection_reason', 'created_at']
+
+
+class NGODashboardSerializer(serializers.ModelSerializer):
+    """Comprehensive dashboard statistics for NGOs"""
+    ngo_dashboard_stats = serializers.ReadOnlyField()
+    total_campaigns = serializers.ReadOnlyField()
+    active_campaigns = serializers.ReadOnlyField()
+    total_donations_received = serializers.ReadOnlyField()
+    total_donors = serializers.ReadOnlyField()
+    campaigns_with_progress = serializers.ReadOnlyField()
+
+    class Meta:
+        model = NGO
+        fields = [
+            'id', 'name', 'status', 'approved', 'wallet_address',
+            'ngo_dashboard_stats', 'total_campaigns', 'active_campaigns',
+            'total_donations_received', 'total_donors', 'campaigns_with_progress'
+        ]
+
+
+class NGOPublicSerializer(serializers.ModelSerializer):
+    """Public information about NGOs for campaign listings"""
+    is_active = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = NGO
+        fields = ['id', 'name', 'website', 'wallet_address', 'is_active']
 
 
 class NGOApplicationSerializer(serializers.ModelSerializer):
@@ -55,12 +82,6 @@ class NGOApplicationSerializer(serializers.ModelSerializer):
             ngo.save()
         return ngo
 
-
-class NGOPublicSerializer(serializers.ModelSerializer):
-    """Public serializer for approved NGOs (used by bot)"""
-    class Meta:
-        model = NGO
-        fields = ['id', 'name', 'wallet_address', 'website', 'description']
 
 class NGOApprovalSerializer(serializers.ModelSerializer):
     class Meta:

@@ -2,3 +2,6 @@
 -r fundlink_web/requirements.txt
 -r telbot_llm/requirements.txt
 -r donation_verifier/requirements.txt
+
+# Production server
+gunicorn==21.2.0

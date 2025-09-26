@@ -1,12 +1,12 @@
 from rest_framework import serializers
 from .models import Donation, DonationIntent, BotUser
-from campaigns.serializers import CampaignSerializer
+from campaigns.serializers import CampaignProgressSerializer
 from ngos.serializers import NGOPublicSerializer
 
 
 class DonationSerializer(serializers.ModelSerializer):
     ngo = NGOPublicSerializer(read_only=True)
-    campaign = CampaignSerializer(read_only=True)
+    campaign_title = serializers.CharField(source='campaign.title', read_only=True)
     explorer_url = serializers.ReadOnlyField()
     is_confirmed = serializers.ReadOnlyField()
     intent_reference = serializers.SerializerMethodField()
@@ -17,6 +17,7 @@ class DonationSerializer(serializers.ModelSerializer):
             'id',
             'ngo',
             'campaign',
+            'campaign_title',
             'token',
             'amount_decimal',
             'value_base_units',
@@ -26,6 +27,7 @@ class DonationSerializer(serializers.ModelSerializer):
             'recipient_address',
             'block_number',
             'tx_timestamp',
+            'donor_telegram_id',
             'explorer_url',
             'is_confirmed',
             'confirmed_at',
@@ -83,7 +85,7 @@ class DonorHistorySerializer(serializers.ModelSerializer):
 
 class DonationIntentSerializer(serializers.ModelSerializer):
     ngo = NGOPublicSerializer(read_only=True)
-    campaign = CampaignSerializer(read_only=True)
+    campaign_title = serializers.CharField(source='campaign.title', read_only=True)
 
     class Meta:
         model = DonationIntent
@@ -92,6 +94,7 @@ class DonationIntentSerializer(serializers.ModelSerializer):
             'reference',
             'ngo',
             'campaign',
+            'campaign_title',
             'token',
             'token_decimals',
             'amount_decimal',

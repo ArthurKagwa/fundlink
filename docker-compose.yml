@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:15
+    container_name: fundlink_db
+    restart: always
+    environment:
+      POSTGRES_DB: fundlink
+      POSTGRES_USER: fundlink
+      POSTGRES_PASSWORD: fundlink
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - fundlink_net
+
+  web:
+    build:
+      context: .
+      target: web
+    container_name: fundlink_web
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://fundlink:fundlink@db:5432/fundlink
+      SECRET_KEY: ${SECRET_KEY:-changeme}
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1},web,fundlink_web
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-changeme}
+    ports:
+      - "8000:8000"
+    networks:
+      - fundlink_net
+
+  bot:
+    build:
+      context: .
+      target: bot
+    container_name: fundlink_bot
+    restart: always
+    depends_on:
+      - web
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      BACKEND_URL: http://web:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-changeme}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY}
+      TOGETHER_MODEL: ${TOGETHER_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      TOGETHER_MODEL_FALLBACK: ${TOGETHER_MODEL_FALLBACK:-meta-llama/Llama-3.1-8B-Instruct}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-20}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - fundlink_net
+
+  verifier:
+    build:
+      context: .
+      target: verifier
+    container_name: fundlink_verifier
+    restart: always
+    depends_on:
+      - web
+    environment:
+      AVALANCHE_RPC_URL: ${AVALANCHE_RPC_URL:-https://api.avax-test.network/ext/bc/C/rpc}
+      AVALANCHE_CHAIN_ID: ${AVALANCHE_CHAIN_ID:-43113}
+      USDT_CONTRACT_ADDRESS: ${USDT_CONTRACT_ADDRESS:-0x5425890298aed601595a70AB815c96711a31Bc65}
+      BACKEND_URL: http://web:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-changeme}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - fundlink_net
+
+volumes:
+  db_data:
+
+networks:
+  fundlink_net:

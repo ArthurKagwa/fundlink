@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from .models import NGO
 from .serializers import (
-    NGOSerializer, NGOApplicationSerializer, NGOPublicSerializer, NGOApprovalSerializer
+    NGOSerializer, NGOApplicationSerializer, NGOPublicSerializer, NGOApprovalSerializer, NGODashboardSerializer
 )
 
 
@@ -79,3 +79,50 @@ class NGOViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset()
         serializer = NGOSerializer(qs, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def dashboard(self, request, pk=None):
+        """Get comprehensive dashboard data for an NGO"""
+        ngo = self.get_object()
+        
+        # Check if user has permission to view this NGO's dashboard
+        if not request.user.is_staff and (
+            not hasattr(request.user, 'ngo') or request.user.ngo != ngo
+        ):
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = NGODashboardSerializer(ngo)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def public_stats(self, request):
+        """Get aggregated statistics for all approved NGOs (public endpoint)"""
+        approved_ngos = NGO.objects.filter(status=NGO.STATUS_APPROVED)
+        
+        total_ngos = approved_ngos.count()
+        total_campaigns = sum(ngo.total_campaigns for ngo in approved_ngos)
+        active_campaigns = sum(ngo.active_campaigns for ngo in approved_ngos)
+        total_raised = sum(ngo.total_donations_received for ngo in approved_ngos)
+        total_donors = sum(ngo.total_donors for ngo in approved_ngos)
+        
+        # Get featured NGOs with their performance
+        featured_ngos = []
+        for ngo in approved_ngos.order_by('-created_at')[:5]:
+            featured_ngos.append({
+                'id': ngo.id,
+                'name': ngo.name,
+                'total_campaigns': ngo.total_campaigns,
+                'total_raised': float(ngo.total_donations_received),
+                'active_campaigns': ngo.active_campaigns,
+            })
+        
+        return Response({
+            'overview': {
+                'total_ngos': total_ngos,
+                'total_campaigns': total_campaigns,
+                'active_campaigns': active_campaigns,
+                'total_raised': float(total_raised),
+                'total_donors': total_donors,
+            },
+            'featured_ngos': featured_ngos
+        })

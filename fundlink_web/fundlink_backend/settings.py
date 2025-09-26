@@ -36,7 +36,15 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-mz0^5y3$!9tokg60dw*+&
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = ['*']  # Allow all hosts for development - TODO: Restrict in production
+# Parse ALLOWED_HOSTS from environment variable
+ALLOWED_HOSTS_ENV = config('ALLOWED_HOSTS', default='localhost,127.0.0.1')
+ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',')]
+
+# For development with ngrok and other external origins
+if DEBUG:
+    ALLOWED_HOSTS = ['*']
+    # Allow any origin for CSRF in development
+    CSRF_TRUSTED_ORIGINS = ['https://*.ngrok-free.app', 'https://*.ngrok.io', 'http://localhost:*', 'https://localhost:*']
 
 
 # Application definition
@@ -178,6 +186,10 @@ SIMPLE_JWT = {
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000', cast=lambda v: [s.strip() for s in v.split(',')])
+
+# Allow all origins in development
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # Avalanche Fuji Configuration
 AVALANCHE_RPC_URL = config('AVALANCHE_RPC_URL', default='https://api.avax-test.network/ext/bc/C/rpc')

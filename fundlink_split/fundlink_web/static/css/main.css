@@ -1,0 +1,39 @@
+/* FundLink - Minimal Styles */
+
+/* Keep only essential responsive and accessibility styles */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 0 15px;
+    }
+    
+    .grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Focus styles for accessibility */
+button:focus,
+input:focus,
+textarea:focus,
+select:focus {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    header, .btn, .alert {
+        display: none;
+    }
+}

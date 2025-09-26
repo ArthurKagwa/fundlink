@@ -42,9 +42,10 @@
             <a href="{% url 'main:home' %}" class="logo">FundLink</a>
             <nav>
                 <a href="{% url 'main:campaigns_list' %}">Campaigns</a>
+                <a href="{% url 'main:public_dashboard' %}">Dashboard</a>
                 {% load ngo_tags %}
                 {% if user.is_authenticated %}
-                    {% if user|has_ngo %}<a href="{% url 'main:ngo_dashboard' %}">Dashboard</a>{% endif %}
+                    {% if user|has_ngo %}<a href="{% url 'main:ngo_dashboard' %}">My NGO</a>{% endif %}
                     {% if user.is_staff %}<a href="/admin/">Admin</a><a href="{% url 'main:staff_campaign_review' %}">Review</a>{% endif %}
                     <form method="post" action="{% url 'logout' %}" style="display:inline;">
                         {% csrf_token %}

@@ -84,3 +84,59 @@ class NGO(models.Model):
         self.rejection_reason = reason
         self.save()
 
+    @property
+    def total_campaigns(self):
+        """Total number of campaigns by this NGO"""
+        return self.campaigns.count()
+
+    @property
+    def active_campaigns(self):
+        """Total number of active/approved campaigns"""
+        return self.campaigns.filter(status='approved').count()
+
+    @property
+    def total_donations_received(self):
+        """Total amount of all confirmed donations received"""
+        from django.db.models import Sum
+        return self.received_donations.filter(confirmed_at__isnull=False).aggregate(
+            total=Sum('amount_decimal')
+        )['total'] or 0
+
+    @property
+    def total_donors(self):
+        """Total number of unique donors"""
+        return self.received_donations.filter(
+            confirmed_at__isnull=False
+        ).values('donor_telegram_id').distinct().count()
+
+    @property
+    def campaigns_with_progress(self):
+        """Get campaigns with their progress data"""
+        campaigns = []
+        for campaign in self.campaigns.filter(status='approved'):
+            campaigns.append({
+                'id': campaign.id,
+                'title': campaign.title,
+                'progress': campaign.funding_progress,
+                'status': campaign.status,
+                'created_at': campaign.created_at,
+            })
+        return campaigns
+
+    @property
+    def ngo_dashboard_stats(self):
+        """Comprehensive dashboard statistics for NGO"""
+        return {
+            'total_campaigns': self.total_campaigns,
+            'active_campaigns': self.active_campaigns,
+            'total_raised': float(self.total_donations_received),
+            'total_donors': self.total_donors,
+            'campaigns_progress': self.campaigns_with_progress,
+            'approval_status': {
+                'status': self.status,
+                'approved': self.approved,
+                'approved_at': self.approved_at,
+                'rejection_reason': self.rejection_reason if self.is_rejected else None,
+            }
+        }
+

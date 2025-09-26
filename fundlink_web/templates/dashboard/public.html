@@ -1,0 +1,439 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - FundLink{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <h1>FundLink Impact Dashboard</h1>
+    <p class="text-muted">Real-time tracking of humanitarian donations and campaign progress</p>
+    
+    <!-- Overview Statistics -->
+    <div id="overview-stats" class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0;">
+        <div class="stat-card card">
+            <h3 id="total-campaigns">Loading...</h3>
+            <p class="text-muted">Active Campaigns</p>
+        </div>
+        <div class="stat-card card">
+            <h3 id="total-raised">Loading...</h3>
+            <p class="text-muted">Total Raised (AVAX/USDT)</p>
+        </div>
+        <div class="stat-card card">
+            <h3 id="total-donors">Loading...</h3>
+            <p class="text-muted">Total Donors</p>
+        </div>
+        <div class="stat-card card">
+            <h3 id="conversion-rate">Loading...</h3>
+            <p class="text-muted">Intent→Donation Rate</p>
+        </div>
+        <div class="stat-card card">
+            <h3 id="total-ngos">Loading...</h3>
+            <p class="text-muted">Verified NGOs</p>
+        </div>
+    </div>
+
+    <!-- Campaign Progress Section -->
+    <div class="section-container">
+        <h2>Campaign Progress Tracking</h2>
+        <div id="campaigns-progress" class="campaigns-grid">
+            <div class="loading-message">Loading campaign progress...</div>
+        </div>
+    </div>
+
+    <!-- NGO Performance Section -->
+    <div class="section-container">
+        <h2>NGO Performance</h2>
+        <div id="ngos-performance" class="ngos-grid">
+            <div class="loading-message">Loading NGO performance data...</div>
+        </div>
+    </div>
+
+    <!-- Real-time Updates Indicator -->
+    <div class="update-indicator">
+        <small class="text-muted">
+            <i class="fas fa-sync-alt" id="refresh-icon"></i>
+            Last updated: <span id="last-updated">Loading...</span>
+        </small>
+    </div>
+</div>
+
+<style>
+.dashboard-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+    background-color: #fff;
+}
+
+.dashboard-container h1 {
+    color: #000;
+}
+
+.dashboard-container p.text-muted {
+    color: #666;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 2rem 0;
+}
+
+.stat-card {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: 8px;
+    background: white;
+    border: 2px solid #333;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.stat-card h3 {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #000;
+    margin-bottom: 0.5rem;
+}
+
+.section-container {
+    margin: 3rem 0;
+}
+
+.section-container h2 {
+    border-bottom: 2px solid #000;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+    color: #000;
+}
+
+.campaigns-grid, .ngos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.campaign-progress-card, .ngo-performance-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 2px solid #333;
+    border-left: 4px solid #000;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 1rem 0;
+    border: 1px solid #ccc;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #666, #333);
+    transition: width 0.5s ease;
+    position: relative;
+}
+
+.progress-fill.target-reached {
+    background: linear-gradient(90deg, #000, #333);
+}
+
+.progress-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.metrics-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.metric-label {
+    color: #666;
+}
+
+.metric-value {
+    font-weight: bold;
+    color: #000;
+}
+
+.intent-indicator {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.intent-indicator.high {
+    background-color: #f0f0f0;
+    color: #000;
+    border: 2px solid #333;
+}
+
+.intent-indicator.medium {
+    background-color: #e8e8e8;
+    color: #333;
+    border: 2px solid #666;
+}
+
+.intent-indicator.low {
+    background-color: #ddd;
+    color: #666;
+    border: 2px solid #999;
+}
+
+.update-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+}
+
+.loading-message {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+    grid-column: 1 / -1;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.refreshing {
+    animation: spin 1s linear infinite;
+}
+
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+    
+    .campaigns-grid, .ngos-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .metrics-row {
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+}
+</style>
+
+<script>
+let dashboardData = {};
+let refreshInterval;
+
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+function formatAmount(amount) {
+    return parseFloat(amount).toFixed(3);
+}
+
+function getIntentIndicatorClass(rate) {
+    if (rate >= 70) return 'high';
+    if (rate >= 40) return 'medium';
+    return 'low';
+}
+
+function formatDate(dateString) {
+    return new Date(dateString).toLocaleString();
+}
+
+function updateOverviewStats(overview) {
+    document.getElementById('total-campaigns').textContent = formatNumber(overview.total_campaigns);
+    document.getElementById('total-raised').textContent = formatAmount(overview.total_raised);
+    document.getElementById('total-donors').textContent = formatNumber(overview.total_confirmations || overview.total_donors || 0);
+    document.getElementById('conversion-rate').textContent = overview.conversion_rate + '%';
+    document.getElementById('total-ngos').textContent = formatNumber(overview.total_ngos);
+}
+
+function createCampaignProgressCard(campaign) {
+    const progress = campaign.funding_progress || campaign;
+    const progressPercentage = progress.progress_percentage || 0;
+    const targetReached = progress.is_target_reached || false;
+    const intentRate = progress.intent_confirmation_rate || 0;
+    
+    return `
+    <div class="campaign-progress-card">
+        <h3 style="color: #000;">${campaign.title}</h3>
+        <p class="text-muted" style="color: #666;">${campaign.ngo_name}</p>            ${progress.target_amount ? `
+            <div class="progress-bar">
+                <div class="progress-fill ${targetReached ? 'target-reached' : ''}" style="width: ${Math.min(progressPercentage, 100)}%">
+                    <div class="progress-text">${progressPercentage.toFixed(1)}%</div>
+                </div>
+            </div>
+            ` : '<p class="text-muted" style="color: #666;">No target amount set</p>'}
+            
+            <div class="metrics-row">
+                <span class="metric-label">Raised:</span>
+                <span class="metric-value">${formatAmount(progress.total_raised)} AVAX/USDT</span>
+            </div>
+            
+            ${progress.target_amount ? `
+            <div class="metrics-row">
+                <span class="metric-label">Target:</span>
+                <span class="metric-value">${formatAmount(progress.target_amount)} AVAX/USDT</span>
+            </div>
+            ` : ''}
+            
+            <div class="metrics-row">
+                <span class="metric-label">Donors:</span>
+                <span class="metric-value">${progress.total_donors || 0}</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Donation Intents:</span>
+                <span class="metric-value">${progress.total_intents || 0}</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Intent Success Rate:</span>
+                <span class="metric-value">
+                    <span class="intent-indicator ${getIntentIndicatorClass(intentRate)}">
+                        ${intentRate.toFixed(1)}%
+                    </span>
+                </span>
+            </div>
+            
+            <div style="margin-top: 1rem;">
+                <small class="text-muted" style="color: #666;">Created: ${formatDate(campaign.created_at)}</small>
+            </div>
+        </div>
+    `;
+}
+
+function createNGOPerformanceCard(ngo) {
+    const avgPerCampaign = ngo.total_campaigns > 0 ? (ngo.total_raised / ngo.total_campaigns) : 0;
+    
+    return `
+        <div class="ngo-performance-card">
+            <h3 style="color: #000;">${ngo.name}</h3>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Total Campaigns:</span>
+                <span class="metric-value">${ngo.total_campaigns}</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Active Campaigns:</span>
+                <span class="metric-value">${ngo.active_campaigns}</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Total Raised:</span>
+                <span class="metric-value">${formatAmount(ngo.total_raised)} AVAX/USDT</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Total Donors:</span>
+                <span class="metric-value">${ngo.total_donors || 0}</span>
+            </div>
+            
+            <div class="metrics-row">
+                <span class="metric-label">Avg per Campaign:</span>
+                <span class="metric-value">${formatAmount(avgPerCampaign)} AVAX/USDT</span>
+            </div>
+        </div>
+    `;
+}
+
+function updateCampaignsProgress(campaigns) {
+    const container = document.getElementById('campaigns-progress');
+    if (campaigns && campaigns.length > 0) {
+        container.innerHTML = campaigns.map(createCampaignProgressCard).join('');
+    } else {
+        container.innerHTML = '<div class="loading-message">No active campaigns with progress data available.</div>';
+    }
+}
+
+function updateNGOsPerformance(ngos) {
+    const container = document.getElementById('ngos-performance');
+    if (ngos && ngos.length > 0) {
+        container.innerHTML = ngos.map(createNGOPerformanceCard).join('');
+    } else {
+        container.innerHTML = '<div class="loading-message">No NGO performance data available.</div>';
+    }
+}
+
+function updateLastUpdated(timestamp) {
+    document.getElementById('last-updated').textContent = formatDate(timestamp);
+}
+
+function startRefreshAnimation() {
+    document.getElementById('refresh-icon').classList.add('refreshing');
+}
+
+function stopRefreshAnimation() {
+    document.getElementById('refresh-icon').classList.remove('refreshing');
+}
+
+async function loadDashboardData() {
+    startRefreshAnimation();
+    try {
+        const response = await fetch('/api/dashboard/overview/');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        dashboardData = data;
+        
+        updateOverviewStats(data.overview);
+        updateCampaignsProgress(data.campaign_progress);
+        updateNGOsPerformance(data.featured_ngos);
+        updateLastUpdated(data.last_updated);
+        
+    } catch (error) {
+        console.error('Error loading dashboard data:', error);
+        // Show error state
+        document.querySelectorAll('.loading-message').forEach(el => {
+            el.textContent = 'Error loading data. Please refresh the page.';
+        });
+    } finally {
+        stopRefreshAnimation();
+    }
+}
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    
+    // Set up auto-refresh every 30 seconds
+    refreshInterval = setInterval(loadDashboardData, 30000);
+});
+
+// Clean up interval when page is unloaded
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+
+{% endblock %}

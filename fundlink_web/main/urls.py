@@ -10,6 +10,9 @@ urlpatterns = [
     path('register/', views.register_view, name='register'),
     path('accounts/profile/', views.UserProfileView.as_view(), name='user_profile'),
     
+    # Dashboard pages
+    path('dashboard/', views.PublicDashboardView.as_view(), name='public_dashboard'),
+    
     # Campaign frontend pages
     path('campaigns/', views.CampaignListView.as_view(), name='campaigns_list'),
     path('campaigns/<int:pk>/', views.CampaignDetailView.as_view(), name='campaign_detail'),
@@ -22,4 +25,5 @@ urlpatterns = [
     # AJAX API endpoints for frontend
     path('frontend-api/campaigns/<int:campaign_id>/stats/', views.campaign_stats_api, name='campaign_stats_api'),
     path('frontend-api/campaigns/<int:campaign_id>/donations/', views.recent_donations_api, name='recent_donations_api'),
+    path('api/dashboard/overview/', views.dashboard_overview_api, name='dashboard_overview_api'),
 ]
